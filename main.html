@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Login Log</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; padding: 0 16px; }
+  input { padding: 8px; font-size: 16px; width: 60%; }
+  button { padding: 8px 14px; font-size: 16px; cursor: pointer; }
+  li { padding: 6px 0; border-bottom: 1px solid #ddd; }
+  .time { color: #666; }
+</style>
+</head>
+<body>
+  <h1>Login Log</h1>
+  <input id="nameBox" type="text" placeholder="Enter your name" autocomplete="off">
+  <button id="addBtn">Log In</button>
+  <ul id="list"></ul>
+
+  <script>
+    const KEY = "loginLog";
+    const nameBox = document.getElementById("nameBox");
+    const list = document.getElementById("list");
+
+    function loadEntries() {
+      try { return JSON.parse(localStorage.getItem(KEY)) || []; }
+      catch (e) { return []; }
+    }
+
+    function saveEntries(entries) {
+      try { localStorage.setItem(KEY, JSON.stringify(entries)); }
+      catch (e) { /* storage unavailable; list lasts until page closes */ }
+    }
+
+    // Format: September 29, 2026, Tuesday, 2:35:07 PM
+    function formatStamp(d) {
+      const date = d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+      const weekday = d.toLocaleDateString("en-US", { weekday: "long" });
+      const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" });
+      return `${date}, ${weekday}, ${time}`;
+    }
+
+    function render(entries) {
+      list.innerHTML = "";
+      entries.forEach(e => {
+        const li = document.createElement("li");
+        const name = document.createElement("strong");
+        name.textContent = e.name;
+        const time = document.createElement("span");
+        time.className = "time";
+        time.textContent = " — " + e.stamp;
+        li.append(name, time);
+        list.appendChild(li);
+      });
+    }
+
+    let entries = loadEntries();
+    render(entries);
+
+    function addName() {
+      const name = nameBox.value.trim();
+      if (!name) return;
+      entries.push({ name, stamp: formatStamp(new Date()) });
+      saveEntries(entries);
+      render(entries);
+      nameBox.value = "";
+      nameBox.focus();
+    }
+
+    document.getElementById("addBtn").addEventListener("click", addName);
+    nameBox.addEventListener("keydown", e => { if (e.key === "Enter") addName(); });
+  </script>
+</body>
+</html>
