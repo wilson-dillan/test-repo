@@ -37,17 +37,14 @@ async function init() {
         charset: 'utf8mb4',
     });
 
-    return new Promise((acc, rej) => {
-        pool.query(
-            'CREATE TABLE IF NOT EXISTS todo_items (id varchar(36), name varchar(255), completed boolean) DEFAULT CHARSET utf8mb4',
-            (err) => {
-                if (err) return rej(err);
+    await query(
+        'CREATE TABLE IF NOT EXISTS todo_items (id varchar(36), name varchar(255), completed boolean) DEFAULT CHARSET utf8mb4',
+    );
+    await query(
+        'CREATE TABLE IF NOT EXISTS todo_attachments (id varchar(36) PRIMARY KEY, item_id varchar(36) NOT NULL, filename varchar(255) NOT NULL, mime_type varchar(100) NOT NULL, size int NOT NULL, data LONGBLOB NOT NULL, created_at timestamp(3) DEFAULT CURRENT_TIMESTAMP(3), INDEX (item_id)) DEFAULT CHARSET utf8mb4',
+    );
 
-                console.log(`Connected to mysql db at host ${HOST}`);
-                acc();
-            },
-        );
-    });
+    console.log(`Connected to mysql db at host ${HOST}`);
 }
 
 async function teardown() {
@@ -59,34 +56,43 @@ async function teardown() {
     });
 }
 
-async function getItems() {
+function query(sql, params = []) {
     return new Promise((acc, rej) => {
-        pool.query('SELECT * FROM todo_items', (err, rows) => {
+        pool.query(sql, params, (err, rows) => {
             if (err) return rej(err);
-            acc(
-                rows.map((item) =>
-                    Object.assign({}, item, {
-                        completed: item.completed === 1,
-                    }),
-                ),
-            );
+            acc(rows);
         });
     });
 }
 
+const ATTACHMENT_COLUMNS = 'id, item_id, filename, mime_type AS mimeType, size';
+
+function withAttachments(items, attachments) {
+    return items.map((item) =>
+        Object.assign({}, item, {
+            completed: item.completed === 1,
+            attachments: attachments
+                .filter((a) => a.item_id === item.id)
+                .map(({ item_id, ...a }) => a),
+        }),
+    );
+}
+
+async function getItems() {
+    const items = await query('SELECT * FROM todo_items');
+    const attachments = await query(
+        `SELECT ${ATTACHMENT_COLUMNS} FROM todo_attachments ORDER BY created_at, filename`,
+    );
+    return withAttachments(items, attachments);
+}
+
 async function getItem(id) {
-    return new Promise((acc, rej) => {
-        pool.query('SELECT * FROM todo_items WHERE id=?', [id], (err, rows) => {
-            if (err) return rej(err);
-            acc(
-                rows.map((item) =>
-                    Object.assign({}, item, {
-                        completed: item.completed === 1,
-                    }),
-                )[0],
-            );
-        });
-    });
+    const items = await query('SELECT * FROM todo_items WHERE id=?', [id]);
+    const attachments = await query(
+        `SELECT ${ATTACHMENT_COLUMNS} FROM todo_attachments WHERE item_id=? ORDER BY created_at, filename`,
+        [id],
+    );
+    return withAttachments(items, attachments)[0];
 }
 
 async function storeItem(item) {
@@ -116,12 +122,30 @@ async function updateItem(id, item) {
 }
 
 async function removeItem(id) {
-    return new Promise((acc, rej) => {
-        pool.query('DELETE FROM todo_items WHERE id = ?', [id], (err) => {
-            if (err) return rej(err);
-            acc();
-        });
-    });
+    await query('DELETE FROM todo_attachments WHERE item_id = ?', [id]);
+    await query('DELETE FROM todo_items WHERE id = ?', [id]);
+}
+
+async function storeAttachment(itemId, attachment) {
+    await query(
+        'INSERT INTO todo_attachments (id, item_id, filename, mime_type, size, data) VALUES (?, ?, ?, ?, ?, ?)',
+        [
+            attachment.id,
+            itemId,
+            attachment.filename,
+            attachment.mimeType,
+            attachment.size,
+            attachment.data,
+        ],
+    );
+}
+
+async function getAttachment(itemId, attachmentId) {
+    const rows = await query(
+        'SELECT id, filename, mime_type AS mimeType, size, data FROM todo_attachments WHERE id=? AND item_id=?',
+        [attachmentId, itemId],
+    );
+    return rows[0];
 }
 
 module.exports = {
@@ -132,4 +156,6 @@ module.exports = {
     storeItem,
     updateItem,
     removeItem,
+    storeAttachment,
+    getAttachment,
 };

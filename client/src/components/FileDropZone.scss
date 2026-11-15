@@ -1,0 +1,71 @@
+.file-drop {
+    margin-bottom: 1rem;
+}
+
+.drop-zone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 1.25rem;
+    border: 2px dashed #bbb;
+    border-radius: 5px;
+    background-color: white;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s ease-in-out;
+
+    &:hover,
+    &:focus-visible {
+        border-color: #198754;
+        outline: none;
+    }
+
+    &.dragging {
+        border-color: #198754;
+        background-color: #e9f5ee;
+    }
+
+    &.disabled {
+        cursor: not-allowed;
+        opacity: 0.6;
+    }
+}
+
+.drop-icon {
+    font-size: 1.75rem;
+    color: #198754;
+}
+
+.drop-error {
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+}
+
+.selected-files {
+    list-style: none;
+    margin: 0.5rem 0 0;
+    padding: 0;
+
+    li {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.25rem 0.5rem;
+        background-color: white;
+        border-radius: 5px;
+        margin-bottom: 0.25rem;
+    }
+
+    .file-name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .file-size {
+        font-size: 0.875rem;
+    }
+}

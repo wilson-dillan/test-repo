@@ -7,6 +7,8 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faTrash } from '@fortawesome/free-solid-svg-icons/faTrash';
 import faCheckSquare from '@fortawesome/fontawesome-free-regular/faCheckSquare';
 import faSquare from '@fortawesome/fontawesome-free-regular/faSquare';
+import { AttachmentIcon } from './AttachmentIcon';
+import { formatFileSize } from './fileSize';
 import './ItemDisplay.scss';
 
 export function ItemDisplay({ item, onItemUpdate, onItemRemoval }) {
@@ -56,6 +58,27 @@ export function ItemDisplay({ item, onItemUpdate, onItemRemoval }) {
                 </Col>
                 <Col xs={8} className="name">
                     {item.name}
+                    {item.attachments?.length > 0 && (
+                        <ul className="attachments">
+                            {item.attachments.map((attachment) => (
+                                <li key={attachment.id}>
+                                    <a
+                                        href={`/api/items/${item.id}/attachments/${attachment.id}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                    >
+                                        <AttachmentIcon
+                                            mimeType={attachment.mimeType}
+                                        />
+                                        <span>{attachment.filename}</span>
+                                    </a>
+                                    <span className="text-muted">
+                                        {formatFileSize(attachment.size)}
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
                 </Col>
                 <Col xs={2} className="text-center remove">
                     <Button
@@ -80,6 +103,14 @@ ItemDisplay.propTypes = {
         id: PropTypes.string,
         name: PropTypes.string,
         completed: PropTypes.bool,
+        attachments: PropTypes.arrayOf(
+            PropTypes.shape({
+                id: PropTypes.string,
+                filename: PropTypes.string,
+                mimeType: PropTypes.string,
+                size: PropTypes.number,
+            }),
+        ),
     }),
     onItemUpdate: PropTypes.func,
     onItemRemoval: PropTypes.func,

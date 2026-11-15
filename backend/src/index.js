@@ -6,15 +6,20 @@ const getItems = require('./routes/getItems');
 const addItem = require('./routes/addItem');
 const updateItem = require('./routes/updateItem');
 const deleteItem = require('./routes/deleteItem');
+const getAttachment = require('./routes/getAttachment');
+const { upload, uploadErrorHandler } = require('./uploads');
 
 app.use(express.json());
 app.use(express.static(__dirname + '/static'));
 
 app.get('/api/greeting', getGreeting);
 app.get('/api/items', getItems);
-app.post('/api/items', addItem);
+app.post('/api/items', upload, addItem);
 app.put('/api/items/:id', updateItem);
 app.delete('/api/items/:id', deleteItem);
+app.get('/api/items/:id/attachments/:attachmentId', getAttachment);
+
+app.use(uploadErrorHandler);
 
 db.init()
     .then(() => {

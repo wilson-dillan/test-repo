@@ -25,7 +25,7 @@ test('it can store and retrieve items', async () => {
 
     const items = await db.getItems();
     expect(items.length).toBe(1);
-    expect(items[0]).toEqual(ITEM);
+    expect(items[0]).toEqual({ ...ITEM, attachments: [] });
 });
 
 test('it can update an existing item', async () => {
@@ -61,5 +61,46 @@ test('it can get a single item', async () => {
     await db.storeItem(ITEM);
 
     const item = await db.getItem(ITEM.id);
-    expect(item).toEqual(ITEM);
+    expect(item).toEqual({ ...ITEM, attachments: [] });
+});
+
+const ATTACHMENT = {
+    id: '0b6f5c1e-4f3a-4c55-9a3e-2f1d8e6b7a90',
+    filename: 'receipt.pdf',
+    mimeType: 'application/pdf',
+    size: 9,
+};
+const ATTACHMENT_DATA = Buffer.from('%PDF-1.7\n');
+
+test('it can store attachments and list them with the item', async () => {
+    await db.init();
+    await db.storeItem(ITEM);
+    await db.storeAttachment(ITEM.id, { ...ATTACHMENT, data: ATTACHMENT_DATA });
+
+    const items = await db.getItems();
+    expect(items[0].attachments).toEqual([ATTACHMENT]);
+
+    const item = await db.getItem(ITEM.id);
+    expect(item.attachments).toEqual([ATTACHMENT]);
+});
+
+test('it can retrieve an attachment with its data', async () => {
+    await db.init();
+    await db.storeItem(ITEM);
+    await db.storeAttachment(ITEM.id, { ...ATTACHMENT, data: ATTACHMENT_DATA });
+
+    const attachment = await db.getAttachment(ITEM.id, ATTACHMENT.id);
+    expect(attachment).toEqual({ ...ATTACHMENT, data: ATTACHMENT_DATA });
+
+    expect(await db.getAttachment('other-item', ATTACHMENT.id)).toBeUndefined();
+});
+
+test('removing an item removes its attachments', async () => {
+    await db.init();
+    await db.storeItem(ITEM);
+    await db.storeAttachment(ITEM.id, { ...ATTACHMENT, data: ATTACHMENT_DATA });
+
+    await db.removeItem(ITEM.id);
+
+    expect(await db.getAttachment(ITEM.id, ATTACHMENT.id)).toBeUndefined();
 });
