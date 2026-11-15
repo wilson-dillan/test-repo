@@ -1,4 +1,4 @@
-const GREETING = 'Hello world!';
+const GREETING = 'Wilson Services Todo List';
 
 module.exports = async (req, res) => {
     res.send({
