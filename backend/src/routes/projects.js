@@ -2,6 +2,7 @@ const express = require('express');
 const archiver = require('archiver');
 const db = require('../db');
 const { HttpError } = require('../errors');
+const { requireSuper } = require('../auth');
 const { PROJECT_TYPES } = require('../projectTypes');
 const {
     applyChanges,
@@ -182,6 +183,17 @@ router.post('/', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
     res.send(await loadProjectDetail(projectId(req)));
+});
+
+// Permanently deletes a project with its tasks, documents, notes and
+// history (all cascade). Super user only; regular users can only set a
+// project inactive.
+router.delete('/:id', requireSuper, async (req, res) => {
+    const { rowCount } = await db.query('DELETE FROM projects WHERE id = $1', [
+        projectId(req),
+    ]);
+    if (!rowCount) throw new HttpError(404, 'Project not found.');
+    res.sendStatus(204);
 });
 
 router.patch('/:id', async (req, res) => {

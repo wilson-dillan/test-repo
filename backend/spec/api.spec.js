@@ -62,6 +62,7 @@ run('API', () => {
             get: (p) => call('GET', p),
             post: (p, b, h) => call('POST', p, b, h),
             patch: (p, b) => call('PATCH', p, b),
+            del: (p) => call('DELETE', p),
             login: (username, password) =>
                 call('POST', '/api/auth/login', { username, password }),
         };
@@ -434,6 +435,41 @@ run('API', () => {
             form(),
         );
         expect(replaced.status).toBe(201);
+    });
+
+    test('only the super user can delete a project, and it is gone for good', async () => {
+        const { data: doomed } = await bob.post('/api/projects', {
+            type: 'partial_home',
+            customerName: 'Typo Customer',
+            address: '0 Nowhere',
+            ownerId: bobId,
+        });
+        const form = new FormData();
+        form.append(
+            'files',
+            new Blob([Buffer.from('%PDF-1.4\n')], { type: 'application/pdf' }),
+            'x.pdf',
+        );
+        const up = await bob.post(
+            `/api/tasks/${doomed.tasks[0].id}/attachments`,
+            form,
+        );
+        const fileId = up.data.attachments[0].id;
+
+        expect((await session().del(`/api/projects/${doomed.id}`)).status).toBe(
+            401,
+        );
+        expect((await bob.del(`/api/projects/${doomed.id}`)).status).toBe(403);
+
+        expect((await boss.del(`/api/projects/${doomed.id}`)).status).toBe(204);
+        expect((await boss.get(`/api/projects/${doomed.id}`)).status).toBe(404);
+        expect(
+            (await boss.get(`/api/tasks/${doomed.tasks[0].id}`)).status,
+        ).toBe(404);
+        expect((await boss.get(`/api/attachments/${fileId}`)).status).toBe(404);
+        const { data: feed } = await boss.get('/api/activity?limit=200');
+        expect(feed.some((h) => h.projectId === doomed.id)).toBe(false);
+        expect((await boss.del(`/api/projects/${doomed.id}`)).status).toBe(404);
     });
 
     test('deactivated users are signed out', async () => {

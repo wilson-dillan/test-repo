@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import PropTypes from 'prop-types';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import Alert from 'react-bootstrap/Alert';
 import Button from 'react-bootstrap/Button';
 import Form from 'react-bootstrap/Form';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
     faDownload,
+    faTrashCan,
     faFolderOpen,
     faNoteSticky,
 } from '@fortawesome/free-solid-svg-icons';
@@ -14,6 +15,7 @@ import { api } from '../api';
 import { useAuth, useLoad } from '../hooks';
 import { formatDateTime, timeAgo } from '../format';
 import { FormRow } from '../components/FormRow';
+import { ConfirmModal } from '../components/ConfirmModal';
 import { HistoryTimeline } from '../components/HistoryTimeline';
 import { ActiveControl, StateControl } from '../components/StateControl';
 import {
@@ -47,7 +49,7 @@ export function ProjectDetailPage() {
 }
 
 function ProjectDetail({ project, users, onUpdate, reload }) {
-    const { notifyChange } = useAuth();
+    const { user, notifyChange } = useAuth();
     const fileCount = project.tasks.reduce((n, t) => n + t.attachmentCount, 0);
 
     const update = async (changes) => {
@@ -147,6 +149,8 @@ function ProjectDetail({ project, users, onUpdate, reload }) {
             </section>
 
             <Notes project={project} onAdded={reload} />
+
+            {user.isSuper && <DeleteProject project={project} />}
         </>
     );
 }
@@ -352,3 +356,49 @@ Notes.propTypes = {
     project: PropTypes.object.isRequired,
     onAdded: PropTypes.func.isRequired,
 };
+
+// Super user only: removes the project and everything in it for good.
+// Regular users can only set a project inactive.
+function DeleteProject({ project }) {
+    const { notifyChange } = useAuth();
+    const navigate = useNavigate();
+    const [confirming, setConfirming] = useState(false);
+
+    return (
+        <section className="panel danger-zone">
+            <div>
+                <h2>Delete project</h2>
+                <p className="text-muted mb-0">
+                    Permanently removes this project, its forms, uploaded
+                    documents, notes and history. Only you can see this.
+                </p>
+            </div>
+            <Button
+                variant="outline-danger"
+                onClick={() => setConfirming(true)}
+            >
+                <FontAwesomeIcon icon={faTrashCan} className="me-2" />
+                Delete project
+            </Button>
+            <ConfirmModal
+                show={confirming}
+                onHide={() => setConfirming(false)}
+                onConfirm={async () => {
+                    await api.del(`/projects/${project.id}`);
+                    notifyChange();
+                    navigate('/', { replace: true });
+                }}
+                icon={faTrashCan}
+                title={`Delete project #${project.id} (${project.customerName})?`}
+                confirmLabel="Delete forever"
+                confirmVariant="danger"
+            >
+                This permanently deletes the project and everything in it,
+                including uploaded documents and history. It can&apos;t be
+                undone or recovered.
+            </ConfirmModal>
+        </section>
+    );
+}
+
+DeleteProject.propTypes = { project: PropTypes.object.isRequired };

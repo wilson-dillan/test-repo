@@ -78,6 +78,10 @@ services:
       SUPERUSER_PASSWORD: changeme123
       SUPERUSER_NAME: Dillan
       APP_URL: http://localhost
+      # Emails go to the local Mailpit inbox (http://mail.localhost) unless
+      # .env sets SMTP_HOST etc. to send through Gmail.
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
     env_file:
       - path: .env
         required: false
@@ -152,6 +156,21 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  ###################################################
+  # Service: mailpit
+  #
+  # A practice mailbox for development. The app's emails land here instead
+  # of real inboxes. Open http://mail.localhost to read them.
+  ###################################################
+  mailpit:
+    image: axllent/mailpit:v1.32.0
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    labels:
+      traefik.http.routers.mailpit.rule: Host(`mail.localhost`)
+      traefik.http.services.mailpit.loadbalancer.server.port: 8025
 
   ###################################################
   # Service: adminer

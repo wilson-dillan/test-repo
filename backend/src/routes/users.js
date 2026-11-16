@@ -8,6 +8,7 @@ const {
     requireUser,
     requireSuper,
 } = require('../auth');
+const { sendTestEmail } = require('../mailer');
 
 const router = express.Router();
 
@@ -77,6 +78,20 @@ router.post('/', requireSuper, async (req, res) => {
         ],
     );
     res.status(201).send(toPublicUser(rows[0]));
+});
+
+// Sends a test message so the super user can check email settings. Any
+// failure comes back with an explanation.
+router.post('/test-email', requireSuper, async (req, res) => {
+    const to = cleanEmail(req.body?.to || req.user.email);
+    if (!to)
+        throw new HttpError(400, 'Enter an email address to send the test to.');
+    try {
+        await sendTestEmail(to, req.user);
+    } catch (err) {
+        throw new HttpError(502, err.message);
+    }
+    res.send({ sentTo: to });
 });
 
 router.patch('/:id', requireSuper, async (req, res) => {

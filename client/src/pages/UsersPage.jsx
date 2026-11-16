@@ -6,7 +6,9 @@ import Form from 'react-bootstrap/Form';
 import Modal from 'react-bootstrap/Modal';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
+    faEnvelope,
     faPenToSquare,
+    faTriangleExclamation,
     faUserPlus,
     faUserShield,
 } from '@fortawesome/free-solid-svg-icons';
@@ -18,6 +20,7 @@ export function UsersPage() {
     const { user: me } = useAuth();
     const { data: users, error, reload } = useLoad(() => api.get('/users'));
     const [editing, setEditing] = useState(null); // null | 'new' | user
+    const [testing, setTesting] = useState(false);
 
     return (
         <>
@@ -30,10 +33,19 @@ export function UsersPage() {
                         access.
                     </div>
                 </div>
-                <Button onClick={() => setEditing('new')}>
-                    <FontAwesomeIcon icon={faUserPlus} className="me-2" />
-                    Add user
-                </Button>
+                <div className="d-flex gap-2 flex-wrap">
+                    <Button
+                        variant="outline-primary"
+                        onClick={() => setTesting(true)}
+                    >
+                        <FontAwesomeIcon icon={faEnvelope} className="me-2" />
+                        Send test email
+                    </Button>
+                    <Button onClick={() => setEditing('new')}>
+                        <FontAwesomeIcon icon={faUserPlus} className="me-2" />
+                        Add user
+                    </Button>
+                </div>
             </div>
 
             {error && <LoadError error={error} onRetry={reload} />}
@@ -72,8 +84,18 @@ export function UsersPage() {
                                         <td>{u.username}</td>
                                         <td>
                                             {u.email || (
-                                                <span className="text-muted">
-                                                    —
+                                                <span
+                                                    className="no-email"
+                                                    title="Add an email so they get assignment emails"
+                                                >
+                                                    <FontAwesomeIcon
+                                                        icon={
+                                                            faTriangleExclamation
+                                                        }
+                                                        className="me-1"
+                                                    />
+                                                    No email, won&apos;t be
+                                                    notified
                                                 </span>
                                             )}
                                         </td>
@@ -117,6 +139,12 @@ export function UsersPage() {
                 </section>
             )}
 
+            <TestEmailModal
+                show={testing}
+                defaultTo={me.email || ''}
+                onHide={() => setTesting(false)}
+            />
+
             <UserModal
                 user={editing}
                 isSelf={editing?.id === me.id}
@@ -129,6 +157,83 @@ export function UsersPage() {
         </>
     );
 }
+
+// Sends a test message and shows exactly why it failed, if it did.
+function TestEmailModal({ show, defaultTo, onHide }) {
+    const [to, setTo] = useState(defaultTo);
+    const [status, setStatus] = useState(null);
+
+    const send = async (e) => {
+        e.preventDefault();
+        setStatus({ busy: true });
+        try {
+            const { sentTo } = await api.post('/users/test-email', { to });
+            setStatus({
+                ok: `Sent to ${sentTo}. Check that inbox (and spam).`,
+            });
+        } catch (err) {
+            setStatus({ error: err.message });
+        }
+    };
+
+    return (
+        <Modal
+            show={show}
+            onHide={onHide}
+            onEnter={() => {
+                setTo(defaultTo);
+                setStatus(null);
+            }}
+            centered
+        >
+            <Form onSubmit={send}>
+                <Modal.Header closeButton>
+                    <Modal.Title>Send a test email</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    <p className="text-muted">
+                        Checks that assignment emails can be sent. If it fails,
+                        you&apos;ll see why.
+                    </p>
+                    <Form.Group controlId="testTo">
+                        <Form.Label>Send to</Form.Label>
+                        <Form.Control
+                            type="email"
+                            value={to}
+                            onChange={(e) => setTo(e.target.value)}
+                            required
+                            autoFocus
+                        />
+                    </Form.Group>
+                    {status?.ok && (
+                        <Alert variant="success" className="mt-3 mb-0">
+                            {status.ok}
+                        </Alert>
+                    )}
+                    {status?.error && (
+                        <Alert variant="danger" className="mt-3 mb-0">
+                            {status.error}
+                        </Alert>
+                    )}
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="light" onClick={onHide}>
+                        Close
+                    </Button>
+                    <Button type="submit" disabled={status?.busy}>
+                        {status?.busy ? 'Sending…' : 'Send test'}
+                    </Button>
+                </Modal.Footer>
+            </Form>
+        </Modal>
+    );
+}
+
+TestEmailModal.propTypes = {
+    show: PropTypes.bool,
+    defaultTo: PropTypes.string,
+    onHide: PropTypes.func.isRequired,
+};
 
 function UserModal({ user, isSelf, onHide, onSaved }) {
     const isNew = user === 'new';

@@ -39,7 +39,9 @@ describe('sameOriginOnly', () => {
     };
 
     test('allows reads and same-origin writes', () => {
-        expect(run('GET', { origin: 'https://evil.example' }).next).toHaveBeenCalled();
+        expect(
+            run('GET', { origin: 'https://evil.example' }).next,
+        ).toHaveBeenCalled();
         expect(
             run('POST', { origin: 'http://localhost', host: 'localhost' }).next,
         ).toHaveBeenCalled();

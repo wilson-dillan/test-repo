@@ -1,12 +1,14 @@
 const db = require('./db');
 const { ensureSuperuser } = require('./auth');
 const { createApp } = require('./app');
+const { describeConfig } = require('./mailer');
 
 const PORT = process.env.PORT || 3000;
 
 db.init()
     .then(ensureSuperuser)
     .then(() => {
+        console.log(describeConfig());
         createApp().listen(PORT, () =>
             console.log(`Listening on port ${PORT}`),
         );

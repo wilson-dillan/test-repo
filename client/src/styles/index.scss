@@ -1576,3 +1576,28 @@ h1,
 .text-none {
     text-transform: none;
 }
+
+.danger-zone {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+    border-color: #f1c3c7;
+
+    h2 {
+        font-size: 1.1rem;
+        color: $ws-red;
+        margin-bottom: 0.25rem;
+    }
+
+    p {
+        font-size: 0.875rem;
+    }
+}
+
+.no-email {
+    color: $ws-amber;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
