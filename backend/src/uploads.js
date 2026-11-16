@@ -66,4 +66,6 @@ module.exports = {
     uploadErrorHandler,
     hasValidContents,
     UploadError,
+    MAX_FILE_SIZE,
+    MAX_FILES,
 };

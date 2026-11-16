@@ -1,29 +1,15 @@
-const express = require('express');
-const app = express();
-const db = require('./persistence');
-const getGreeting = require('./routes/getGreeting');
-const getItems = require('./routes/getItems');
-const addItem = require('./routes/addItem');
-const updateItem = require('./routes/updateItem');
-const deleteItem = require('./routes/deleteItem');
-const getAttachment = require('./routes/getAttachment');
-const { upload, uploadErrorHandler } = require('./uploads');
+const db = require('./db');
+const { ensureSuperuser } = require('./auth');
+const { createApp } = require('./app');
 
-app.use(express.json());
-app.use(express.static(__dirname + '/static'));
-
-app.get('/api/greeting', getGreeting);
-app.get('/api/items', getItems);
-app.post('/api/items', upload, addItem);
-app.put('/api/items/:id', updateItem);
-app.delete('/api/items/:id', deleteItem);
-app.get('/api/items/:id/attachments/:attachmentId', getAttachment);
-
-app.use(uploadErrorHandler);
+const PORT = process.env.PORT || 3000;
 
 db.init()
+    .then(ensureSuperuser)
     .then(() => {
-        app.listen(3000, () => console.log('Listening on port 3000'));
+        createApp().listen(PORT, () =>
+            console.log(`Listening on port ${PORT}`),
+        );
     })
     .catch((err) => {
         console.error(err);

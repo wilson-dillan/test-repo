@@ -5,23 +5,13 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCloudArrowUp } from '@fortawesome/free-solid-svg-icons/faCloudArrowUp';
 import { faXmark } from '@fortawesome/free-solid-svg-icons/faXmark';
 import { AttachmentIcon } from './AttachmentIcon';
-import { formatFileSize } from './fileSize';
+import {
+    ACCEPT_ATTRIBUTE,
+    MAX_FILES,
+    checkFiles,
+    formatFileSize,
+} from './files';
 import './FileDropZone.scss';
-
-const ACCEPTED_TYPES = {
-    'application/pdf': ['.pdf'],
-    'image/jpeg': ['.jpg', '.jpeg'],
-};
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
-const MAX_FILES = 10;
-
-function rejectionReason(file) {
-    const extension = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
-    if (!ACCEPTED_TYPES[file.type]?.includes(extension))
-        return 'only PDF and JPEG files are allowed';
-    if (file.size > MAX_FILE_SIZE) return 'files must be 10 MB or smaller';
-    return null;
-}
 
 export function FileDropZone({ files, onFilesChange, disabled }) {
     const [dragging, setDragging] = useState(false);
@@ -41,21 +31,8 @@ export function FileDropZone({ files, onFilesChange, disabled }) {
     }, []);
 
     const addFiles = (fileList) => {
-        const accepted = [];
-        const problems = [];
-        for (const file of fileList) {
-            const reason = rejectionReason(file);
-            if (reason) problems.push(`${file.name}: ${reason}`);
-            else accepted.push(file);
-        }
-
-        const room = MAX_FILES - files.length;
-        if (accepted.length > room) {
-            problems.push(`You can attach at most ${MAX_FILES} files`);
-            accepted.splice(room);
-        }
-
-        setError(problems.length ? problems.join('. ') + '.' : null);
+        const { accepted, error } = checkFiles(fileList, files.length);
+        setError(error);
         if (accepted.length) onFilesChange([...files, ...accepted]);
     };
 
@@ -104,14 +81,14 @@ export function FileDropZone({ files, onFilesChange, disabled }) {
                     browse
                 </div>
                 <small className="text-muted">
-                    PDF or JPEG, up to 10 MB each
+                    PDF or JPEG, up to 10 MB each, {MAX_FILES} at a time
                 </small>
                 <input
                     ref={inputRef}
                     type="file"
                     multiple
                     hidden
-                    accept=".pdf,.jpg,.jpeg,application/pdf,image/jpeg"
+                    accept={ACCEPT_ATTRIBUTE}
                     onChange={(e) => {
                         addFiles(e.target.files);
                         e.target.value = '';

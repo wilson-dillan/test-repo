@@ -7,23 +7,23 @@
     flex-direction: column;
     align-items: center;
     gap: 0.25rem;
-    padding: 1.25rem;
-    border: 2px dashed #bbb;
-    border-radius: 5px;
-    background-color: white;
+    padding: 2rem 1.25rem;
+    border: 2px dashed #b8c4d4;
+    border-radius: 0.875rem;
+    background-color: #f8fafc;
     text-align: center;
     cursor: pointer;
     transition: all 0.15s ease-in-out;
 
     &:hover,
     &:focus-visible {
-        border-color: #198754;
+        border-color: #05438f;
         outline: none;
     }
 
     &.dragging {
-        border-color: #198754;
-        background-color: #e9f5ee;
+        border-color: #05438f;
+        background-color: #e8f5fa;
     }
 
     &.disabled {
@@ -34,7 +34,7 @@
 
 .drop-icon {
     font-size: 1.75rem;
-    color: #198754;
+    color: #05438f;
 }
 
 .drop-error {

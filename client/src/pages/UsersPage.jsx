@@ -1,0 +1,306 @@
+import { useState } from 'react';
+import PropTypes from 'prop-types';
+import Alert from 'react-bootstrap/Alert';
+import Button from 'react-bootstrap/Button';
+import Form from 'react-bootstrap/Form';
+import Modal from 'react-bootstrap/Modal';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import {
+    faPenToSquare,
+    faUserPlus,
+    faUserShield,
+} from '@fortawesome/free-solid-svg-icons';
+import { api } from '../api';
+import { useAuth, useLoad } from '../hooks';
+import { Avatar, LoadError, PageLoader } from '../components/ui';
+
+export function UsersPage() {
+    const { user: me } = useAuth();
+    const { data: users, error, reload } = useLoad(() => api.get('/users'));
+    const [editing, setEditing] = useState(null); // null | 'new' | user
+
+    return (
+        <>
+            <div className="page-header">
+                <div>
+                    <div className="eyebrow">Admin</div>
+                    <h1>Users</h1>
+                    <div className="text-muted mt-1">
+                        Add logins for your team, reset passwords and manage
+                        access.
+                    </div>
+                </div>
+                <Button onClick={() => setEditing('new')}>
+                    <FontAwesomeIcon icon={faUserPlus} className="me-2" />
+                    Add user
+                </Button>
+            </div>
+
+            {error && <LoadError error={error} onRetry={reload} />}
+            {!users && !error && <PageLoader />}
+            {users && (
+                <section className="panel p-0">
+                    <div className="table-responsive">
+                        <table className="table users-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th className="ps-4">Name</th>
+                                    <th>Username</th>
+                                    <th>Email</th>
+                                    <th>Role</th>
+                                    <th>Status</th>
+                                    <th />
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {users.map((u) => (
+                                    <tr
+                                        key={u.id}
+                                        className={u.active ? '' : 'inactive'}
+                                    >
+                                        <td className="ps-4">
+                                            <span className="owner">
+                                                <Avatar name={u.displayName} />
+                                                {u.displayName}
+                                                {u.id === me.id && (
+                                                    <span className="text-muted fw-normal">
+                                                        (you)
+                                                    </span>
+                                                )}
+                                            </span>
+                                        </td>
+                                        <td>{u.username}</td>
+                                        <td>
+                                            {u.email || (
+                                                <span className="text-muted">
+                                                    —
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td>
+                                            {u.isSuper ? (
+                                                <span className="role-badge super">
+                                                    <FontAwesomeIcon
+                                                        icon={faUserShield}
+                                                    />
+                                                    Super user
+                                                </span>
+                                            ) : (
+                                                <span className="role-badge">
+                                                    Member
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td>
+                                            {u.active
+                                                ? 'Active'
+                                                : 'Deactivated'}
+                                        </td>
+                                        <td className="text-end pe-4">
+                                            <Button
+                                                variant="light"
+                                                size="sm"
+                                                onClick={() => setEditing(u)}
+                                            >
+                                                <FontAwesomeIcon
+                                                    icon={faPenToSquare}
+                                                    className="me-1"
+                                                />
+                                                Edit
+                                            </Button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            )}
+
+            <UserModal
+                user={editing}
+                isSelf={editing?.id === me.id}
+                onHide={() => setEditing(null)}
+                onSaved={() => {
+                    setEditing(null);
+                    reload();
+                }}
+            />
+        </>
+    );
+}
+
+function UserModal({ user, isSelf, onHide, onSaved }) {
+    const isNew = user === 'new';
+    return (
+        <Modal show={Boolean(user)} onHide={onHide} centered>
+            {user && (
+                <UserForm
+                    key={isNew ? 'new' : user.id}
+                    user={isNew ? null : user}
+                    isSelf={isSelf}
+                    onHide={onHide}
+                    onSaved={onSaved}
+                />
+            )}
+        </Modal>
+    );
+}
+
+UserModal.propTypes = {
+    user: PropTypes.oneOfType([PropTypes.string, PropTypes.object]),
+    isSelf: PropTypes.bool,
+    onHide: PropTypes.func.isRequired,
+    onSaved: PropTypes.func.isRequired,
+};
+
+function UserForm({ user, isSelf, onHide, onSaved }) {
+    const [values, setValues] = useState({
+        displayName: user?.displayName || '',
+        username: user?.username || '',
+        email: user?.email || '',
+        password: '',
+        isSuper: user?.isSuper || false,
+        active: user?.active ?? true,
+    });
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
+
+    const set = (key) => (e) =>
+        setValues((v) => ({
+            ...v,
+            [key]:
+                e.target.type === 'checkbox'
+                    ? e.target.checked
+                    : e.target.value,
+        }));
+
+    const save = async (e) => {
+        e.preventDefault();
+        setSaving(true);
+        setError(null);
+        try {
+            if (user) {
+                const { username, password, ...rest } = values; // eslint-disable-line no-unused-vars
+                await api.patch(`/users/${user.id}`, {
+                    ...rest,
+                    ...(password && { password }),
+                });
+            } else {
+                await api.post('/users', values);
+            }
+            onSaved();
+        } catch (err) {
+            setError(err.message);
+            setSaving(false);
+        }
+    };
+
+    return (
+        <Form onSubmit={save}>
+            <Modal.Header closeButton>
+                <Modal.Title>
+                    {user ? `Edit ${user.displayName}` : 'Add user'}
+                </Modal.Title>
+            </Modal.Header>
+            <Modal.Body>
+                <Form.Group className="mb-3" controlId="displayName">
+                    <Form.Label>Name</Form.Label>
+                    <Form.Control
+                        value={values.displayName}
+                        onChange={set('displayName')}
+                        placeholder="Shown as “Welcome, …”"
+                        maxLength={80}
+                        required
+                        autoFocus
+                    />
+                </Form.Group>
+                <Form.Group className="mb-3" controlId="username">
+                    <Form.Label>Username</Form.Label>
+                    <Form.Control
+                        value={values.username}
+                        onChange={set('username')}
+                        disabled={Boolean(user)}
+                        autoCapitalize="none"
+                        maxLength={40}
+                        required
+                    />
+                    {!user && (
+                        <Form.Text>
+                            Used to log in. Letters, numbers, dots, dashes or
+                            underscores.
+                        </Form.Text>
+                    )}
+                </Form.Group>
+                <Form.Group className="mb-3" controlId="email">
+                    <Form.Label>Email</Form.Label>
+                    <Form.Control
+                        type="email"
+                        value={values.email}
+                        onChange={set('email')}
+                        placeholder="For task assignment emails"
+                    />
+                </Form.Group>
+                <Form.Group className="mb-3" controlId="password">
+                    <Form.Label>
+                        {user ? 'Reset password' : 'Password'}
+                    </Form.Label>
+                    <Form.Control
+                        type="password"
+                        value={values.password}
+                        onChange={set('password')}
+                        autoComplete="new-password"
+                        minLength={8}
+                        required={!user}
+                        placeholder={
+                            user ? 'Leave blank to keep the current one' : ''
+                        }
+                    />
+                    <Form.Text>
+                        At least 8 characters.
+                        {user && ' Resetting signs them out everywhere.'}
+                    </Form.Text>
+                </Form.Group>
+                <Form.Check
+                    type="switch"
+                    id="isSuper"
+                    label="Super user (can undo changes and manage users)"
+                    checked={values.isSuper}
+                    onChange={set('isSuper')}
+                    disabled={isSelf}
+                    className="mb-2"
+                />
+                {user && (
+                    <Form.Check
+                        type="switch"
+                        id="active"
+                        label="Active (can log in)"
+                        checked={values.active}
+                        onChange={set('active')}
+                        disabled={isSelf}
+                    />
+                )}
+                {error && (
+                    <Alert variant="danger" className="mt-3 mb-0">
+                        {error}
+                    </Alert>
+                )}
+            </Modal.Body>
+            <Modal.Footer>
+                <Button variant="light" onClick={onHide} disabled={saving}>
+                    Cancel
+                </Button>
+                <Button type="submit" disabled={saving}>
+                    {saving ? 'Saving…' : user ? 'Save changes' : 'Add user'}
+                </Button>
+            </Modal.Footer>
+        </Form>
+    );
+}
+
+UserForm.propTypes = {
+    user: PropTypes.object,
+    isSelf: PropTypes.bool,
+    onHide: PropTypes.func.isRequired,
+    onSaved: PropTypes.func.isRequired,
+};

@@ -8,8 +8,8 @@
 # there is some overlap in the routing rules, the proxy determines the service
 # based on the most specific rule.
 #
-# To support easier debugging and troubleshooting, phpMyAdmin is also included
-# to provide a web interface to the MySQL database.
+# To support easier debugging and troubleshooting, Adminer is also included
+# to provide a web interface to the Postgres database.
 ###################################################
 
 ###################################################
@@ -57,9 +57,12 @@ services:
   # automatically reloaded when code changes are made.
   #
   # The environment variables configure the application to connect to the
-  # database, which is also configured in this Compose file. We obviously
-  # wouldn't hard-code these values in a production environment. But, in
-  # dev, these values are fine.
+  # database, which is also configured in this Compose file, and create the
+  # first super user. We obviously wouldn't hard-code these values in a
+  # production environment. But, in dev, these values are fine.
+  #
+  # Secrets such as the Gmail app password (SMTP_USER / SMTP_PASSWORD) go in
+  # an optional, git-ignored .env file next to this one.
   #
   # Finally, the labels are used to configure Traefik (the reverse proxy) with
   # the appropriate routing rules. In this case, all requests to localhost/api/*
@@ -70,12 +73,16 @@ services:
       context: ./
       target: backend-dev
     environment:
-      MYSQL_HOST: mysql
-      MYSQL_USER: root
-      MYSQL_PASSWORD: secret
-      MYSQL_DB: todos
+      DATABASE_URL: postgres://postgres:secret@postgres:5432/wilson
+      SUPERUSER_USERNAME: dillan
+      SUPERUSER_PASSWORD: changeme123
+      SUPERUSER_NAME: Dillan
+      APP_URL: http://localhost
+    env_file:
+      - path: .env
+        required: false
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
     develop:
       watch:
@@ -120,65 +127,52 @@ services:
 
 
   ###################################################
-  # Service: mysql
+  # Service: postgres
   #
-  # The MySQL service is used to provide the database for the application.
-  # The image for this service comes directly from Docker Hub and is a Docker 
-  # Official Image.
-  
-  # The data is persisted in a volume named todo-mysql-data. Using a volume 
-  # allows us to take down the services without losing the data. When we start
-  # the services again, the data will still be there (assuming we didn't delete
-  # the volume, of course!).
+  # The Postgres service provides the database for the application. The image
+  # for this service comes directly from Docker Hub and is a Docker Official
+  # Image.
   #
-  # The environment variables configure the root password and the name of the
+  # The data is persisted in a volume named wilson-postgres-data. Using a
+  # volume allows us to take down the services without losing the data.
+  #
+  # The environment variables configure the password and the name of the
   # database to create. Since these are used only for local development, it's
   # ok to hard-code them here.
   ###################################################
-  mysql:
-    image: mysql:9.3
+  postgres:
+    image: postgres:17
     volumes:
-      - todo-mysql-data:/var/lib/mysql
-    environment: 
-      MYSQL_ROOT_PASSWORD: secret
-      MYSQL_DATABASE: todos
+      - wilson-postgres-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: wilson
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "wilson"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   ###################################################
-  # Service: phpmyadmin
+  # Service: adminer
   #
-  # This service provides a web interface to the MySQL database. It's useful
-  # for debugging and troubleshooting data, schemas, and more. The image for 
-  # this service comes directly from Docker Hub and is a Docker Official Image.
-  #
-  # The environment variables configure the connection to the database and 
-  # provide the default credentials, letting us immediately open the interface
-  # without needing to log in.
-  #
-  # The labels are used to configure Traefik (the reverse proxy) with the
-  # routing rules. In this case, all requests to db.localhost will be forwarded
-  # to this service's port 80.
+  # This service provides a web interface to the database, useful for
+  # debugging and looking at data. Open http://db.localhost and log in with
+  # System: PostgreSQL, Server: postgres, Username: postgres,
+  # Password: secret, Database: wilson.
   ###################################################
-  phpmyadmin:
-    image: phpmyadmin
+  adminer:
+    image: adminer
     environment:
-      PMA_HOST: mysql
-      PMA_USER: root
-      PMA_PASSWORD: secret
+      ADMINER_DEFAULT_SERVER: postgres
     labels:
-      traefik.http.routers.phpmyadmin.rule: Host(`db.localhost`)
-      traefik.http.services.phpmyadmin.loadbalancer.server.port: 80
+      traefik.http.routers.adminer.rule: Host(`db.localhost`)
+      traefik.http.services.adminer.loadbalancer.server.port: 8080
 
 ###################################################
 # Volumes
 #
-# For this application stack, we only have one volume. It's used to persist the
-# data for the MySQL service. We are only going to use the default values,
-# hence the lack of any configuration for the volume.
+# The one volume persists the data for the Postgres service.
 ###################################################
 volumes:
-  todo-mysql-data:
+  wilson-postgres-data:

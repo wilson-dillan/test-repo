@@ -1,0 +1,455 @@
+// End-to-end API tests against a real Postgres database. They run only when
+// TEST_DATABASE_URL points at a throwaway database (its name must contain
+// "test", since the schema is wiped first), e.g.:
+//
+//   docker compose exec postgres createdb -U postgres wilson_test
+//   docker compose exec -e TEST_DATABASE_URL=postgres://postgres:secret@postgres:5432/wilson_test backend npm test
+const { Client } = require('pg');
+
+const DATABASE_URL = process.env.TEST_DATABASE_URL;
+const run =
+    DATABASE_URL && /test/.test(DATABASE_URL) ? describe : describe.skip;
+
+run('API', () => {
+    let server, base, db;
+
+    beforeAll(async () => {
+        const client = new Client({ connectionString: DATABASE_URL });
+        await client.connect();
+        await client.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+        await client.end();
+
+        process.env.SUPERUSER_USERNAME = 'boss';
+        process.env.SUPERUSER_PASSWORD = 'boss-password';
+        process.env.SUPERUSER_NAME = 'The Boss';
+        db = require('../src/db');
+        await db.init(DATABASE_URL);
+        await require('../src/auth').ensureSuperuser();
+
+        await new Promise((resolve) => {
+            server = require('../src/app').createApp().listen(0, resolve);
+        });
+        base = `http://localhost:${server.address().port}`;
+    });
+
+    afterAll(async () => {
+        await new Promise((resolve) => server.close(resolve));
+        await db.teardown();
+    });
+
+    // A tiny client that keeps its own session cookie.
+    function session() {
+        let cookie = '';
+        const call = async (method, path, body, headers = {}) => {
+            const isForm = body instanceof FormData;
+            const res = await fetch(base + path, {
+                method,
+                headers: {
+                    cookie,
+                    ...(body &&
+                        !isForm && { 'content-type': 'application/json' }),
+                    ...headers,
+                },
+                body: body && (isForm ? body : JSON.stringify(body)),
+            });
+            const setCookie = res.headers.get('set-cookie');
+            if (setCookie) cookie = setCookie.split(';')[0];
+            const type = res.headers.get('content-type') || '';
+            const data = type.includes('json') ? await res.json() : null;
+            return { status: res.status, data, res };
+        };
+        return {
+            get: (p) => call('GET', p),
+            post: (p, b, h) => call('POST', p, b, h),
+            patch: (p, b) => call('PATCH', p, b),
+            login: (username, password) =>
+                call('POST', '/api/auth/login', { username, password }),
+        };
+    }
+
+    const boss = session();
+    const alice = session();
+    const bob = session();
+    let aliceId, bobId, project, taskA;
+
+    test('requires login', async () => {
+        const { status } = await session().get('/api/projects');
+        expect(status).toBe(401);
+    });
+
+    test('rejects a wrong password', async () => {
+        const { status } = await session().login('boss', 'nope');
+        expect(status).toBe(401);
+    });
+
+    test('the super user can log in', async () => {
+        const { status, data } = await boss.login('boss', 'boss-password');
+        expect(status).toBe(200);
+        expect(data).toMatchObject({ displayName: 'The Boss', isSuper: true });
+        expect((await boss.get('/api/auth/me')).data.username).toBe('boss');
+    });
+
+    test('the super user creates accounts', async () => {
+        const a = await boss.post('/api/users', {
+            username: 'Alice',
+            displayName: 'Alice',
+            email: 'alice@example.com',
+            password: 'alice-password',
+        });
+        expect(a.status).toBe(201);
+        expect(a.data.username).toBe('alice');
+        aliceId = a.data.id;
+
+        const b = await boss.post('/api/users', {
+            username: 'bob',
+            displayName: 'Bob',
+            password: 'bob-password',
+        });
+        bobId = b.data.id;
+
+        const short = await boss.post('/api/users', {
+            username: 'carl',
+            displayName: 'Carl',
+            password: 'short',
+        });
+        expect(short.status).toBe(400);
+    });
+
+    test('regular users cannot create accounts', async () => {
+        await alice.login('alice', 'alice-password');
+        await bob.login('bob', 'bob-password');
+        const { status } = await alice.post('/api/users', {
+            username: 'eve',
+            displayName: 'Eve',
+            password: 'eve-password',
+        });
+        expect(status).toBe(403);
+    });
+
+    test('creating a project creates its numbered tasks', async () => {
+        const { status, data } = await alice.post('/api/projects', {
+            type: 'whole_home',
+            customerName: 'Jane Smith',
+            address: '12 Oak St',
+            dueDate: '2026-12-01',
+            ownerId: bobId,
+            note: 'Gate code 1234',
+        });
+        expect(status).toBe(201);
+        project = data;
+        expect(project.id).toBe(1);
+        expect(project.typeLabel).toBe('Whole Home');
+        expect(project.tasks.map((t) => t.code)).toEqual([
+            '#1a',
+            '#1b',
+            '#1c',
+            '#1d',
+        ]);
+        expect(project.tasks.every((t) => t.owner.id === bobId)).toBe(true);
+        expect(project.notes[0]).toMatchObject({
+            author: 'Alice',
+            body: 'Gate code 1234',
+        });
+        expect(project.history[0].action).toBe('created');
+        taskA = project.tasks[0];
+    });
+
+    test('validates new projects', async () => {
+        const { status, data } = await alice.post('/api/projects', {
+            type: 'whole_home',
+            customerName: '',
+            address: 'x',
+            ownerId: bobId,
+        });
+        expect(status).toBe(400);
+        expect(data.error).toMatch(/Customer name/);
+    });
+
+    test('reassigning a task is logged with names', async () => {
+        const { data } = await alice.patch(`/api/tasks/${taskA.id}`, {
+            ownerId: aliceId,
+        });
+        expect(data.owner.name).toBe('Alice');
+        expect(data.history[0]).toMatchObject({
+            field: 'owner_id',
+            oldValue: 'Bob',
+            newValue: 'Alice',
+            actor: 'Alice',
+            undoable: true,
+        });
+    });
+
+    test('Done is final for regular users', async () => {
+        const done = await alice.patch(`/api/tasks/${taskA.id}`, {
+            state: 'done',
+        });
+        expect(done.data.state).toBe('done');
+        expect(done.data.completedAt).toBeTruthy();
+
+        const reopen = await alice.patch(`/api/tasks/${taskA.id}`, {
+            state: 'todo',
+        });
+        expect(reopen.status).toBe(403);
+    });
+
+    test('only the super user can undo', async () => {
+        const { data: task } = await alice.get(`/api/tasks/${taskA.id}`);
+        const doneEntry = task.history.find((h) => h.field === 'state');
+
+        expect(
+            (await alice.post(`/api/activity/${doneEntry.id}/undo`)).status,
+        ).toBe(403);
+
+        const undo = await boss.post(`/api/activity/${doneEntry.id}/undo`);
+        expect(undo.status).toBe(200);
+
+        const { data: after } = await alice.get(`/api/tasks/${taskA.id}`);
+        expect(after.state).toBe('todo');
+        expect(after.completedAt).toBeNull();
+        expect(after.history[0]).toMatchObject({
+            action: 'undo',
+            actor: 'The Boss',
+            newValue: 'todo',
+        });
+        expect(after.history.find((h) => h.id === doneEntry.id)).toMatchObject({
+            undone: true,
+            undoneBy: 'The Boss',
+            undoable: false,
+        });
+
+        const again = await boss.post(`/api/activity/${doneEntry.id}/undo`);
+        expect(again.status).toBe(409);
+    });
+
+    test('an undo is refused if the field changed again since', async () => {
+        const { data: task } = await alice.get(`/api/tasks/${taskA.id}`);
+        const ownerEntry = task.history.find((h) => h.field === 'owner_id');
+        await alice.patch(`/api/tasks/${taskA.id}`, { ownerId: bobId });
+
+        const { status, data } = await boss.post(
+            `/api/activity/${ownerEntry.id}/undo`,
+        );
+        expect(status).toBe(409);
+        expect(data.error).toMatch(/changed again/);
+    });
+
+    test('project fields can be edited and are logged', async () => {
+        const { data } = await bob.patch(`/api/projects/${project.id}`, {
+            address: '14 Oak St',
+            dueDate: '2026-12-15',
+        });
+        expect(data.address).toBe('14 Oak St');
+        expect(data.dueDate).toBe('2026-12-15');
+        expect(
+            data.history
+                .slice(0, 2)
+                .map((h) => h.field)
+                .sort(),
+        ).toEqual(['address', 'due_date']);
+
+        const bad = await bob.patch(`/api/projects/${project.id}`, {
+            dueDate: 'tomorrow',
+        });
+        expect(bad.status).toBe(400);
+    });
+
+    test('notes can be added to a project', async () => {
+        const { status, data } = await bob.post(
+            `/api/projects/${project.id}/notes`,
+            { body: 'Customer called' },
+        );
+        expect(status).toBe(201);
+        expect(data.author).toBe('Bob');
+        const { data: detail } = await bob.get(`/api/projects/${project.id}`);
+        expect(detail.notes.map((n) => n.body)).toEqual([
+            'Customer called',
+            'Gate code 1234',
+        ]);
+    });
+
+    test('files upload to a task and download as a zip', async () => {
+        const pdf = Buffer.from('%PDF-1.4\n%%EOF\n');
+        const form = new FormData();
+        form.append(
+            'files',
+            new Blob([pdf], { type: 'application/pdf' }),
+            'permit.pdf',
+        );
+        const up = await bob.post(`/api/tasks/${taskA.id}/attachments`, form);
+        expect(up.status).toBe(201);
+        expect(up.data.attachments[0]).toMatchObject({
+            filename: 'permit.pdf',
+            uploadedBy: 'Bob',
+        });
+        // Uploading the form completes the task.
+        expect(up.data.state).toBe('done');
+        expect(up.data.history.find((h) => h.action === 'file')).toMatchObject({
+            newValue: 'permit.pdf',
+        });
+
+        const file = await bob.get(
+            `/api/attachments/${up.data.attachments[0].id}`,
+        );
+        expect(file.status).toBe(200);
+        expect(Buffer.from(await file.res.arrayBuffer())).toEqual(pdf);
+
+        const zip = await bob.get(`/api/projects/${project.id}/documents.zip`);
+        expect(zip.status).toBe(200);
+        const bytes = Buffer.from(await zip.res.arrayBuffer());
+        expect(bytes.subarray(0, 2).toString()).toBe('PK');
+    });
+
+    test('lists my projects and tasks', async () => {
+        const mine = await bob.get('/api/projects?owner=me');
+        expect(mine.data.map((p) => p.id)).toEqual([project.id]);
+        expect(mine.data[0]).toMatchObject({ taskTotal: 4, taskDone: 1 });
+
+        const aliceTasks = await alice.get('/api/tasks?owner=me');
+        expect(aliceTasks.data).toEqual([]);
+    });
+
+    test('marking a project done is final for regular users', async () => {
+        await bob.patch(`/api/projects/${project.id}`, { state: 'done' });
+        const reopen = await bob.patch(`/api/projects/${project.id}`, {
+            state: 'todo',
+        });
+        expect(reopen.status).toBe(403);
+        const superReopen = await boss.patch(`/api/projects/${project.id}`, {
+            state: 'todo',
+        });
+        expect(superReopen.data.state).toBe('todo');
+    });
+
+    test('dashboard stats', async () => {
+        await bob.patch(`/api/tasks/${project.tasks[1].id}`, { state: 'done' });
+        const { data } = await bob.get('/api/stats');
+        expect(data.tasks).toEqual({ total: 4, done: 2 });
+        expect(data.tasksPerUser.find((u) => u.name === 'Bob')).toMatchObject({
+            total: 4,
+            done: 2,
+        });
+        expect(data.projectsCompletedByWeek).toHaveLength(12);
+    });
+
+    test('activity feed shows recent changes across projects', async () => {
+        const { data } = await alice.get('/api/activity?limit=5');
+        expect(data).toHaveLength(5);
+        expect(data[0]).toMatchObject({ taskCode: '#1b', field: 'state' });
+    });
+
+    test('inactive projects stay listed and only the super user reactivates', async () => {
+        const second = await bob.post('/api/projects', {
+            type: 'partial_home',
+            customerName: 'Old Lead',
+            address: '1 Elm St',
+            ownerId: bobId,
+        });
+        const off = await bob.patch(`/api/projects/${second.data.id}`, {
+            active: false,
+        });
+        expect(off.data.active).toBe(false);
+        expect(off.data.history[0]).toMatchObject({
+            field: 'active',
+            oldValue: 'true',
+            newValue: 'false',
+        });
+
+        const list = await bob.get('/api/projects');
+        expect(list.data.map((p) => p.id)).toEqual([
+            project.id,
+            second.data.id,
+        ]);
+        expect(list.data[1].active).toBe(false);
+
+        const tasks = await bob.get('/api/tasks?owner=me');
+        expect(
+            tasks.data.find((t) => t.projectId === second.data.id)
+                .projectActive,
+        ).toBe(false);
+
+        const stats = await bob.get('/api/stats');
+        expect(stats.data.projects).toMatchObject({ open: 1, inactive: 1 });
+
+        const back = await bob.patch(`/api/projects/${second.data.id}`, {
+            active: true,
+        });
+        expect(back.status).toBe(403);
+        expect(
+            (
+                await bob.patch(`/api/projects/${second.data.id}`, {
+                    active: 'no',
+                })
+            ).status,
+        ).toBe(400);
+
+        const superBack = await boss.patch(`/api/projects/${second.data.id}`, {
+            active: true,
+        });
+        expect(superBack.data.active).toBe(true);
+    });
+
+    test('uploading every form completes the project; done forms are locked', async () => {
+        const form = () => {
+            const body = new FormData();
+            body.append(
+                'files',
+                new Blob([Buffer.from('%PDF-1.4\n')], {
+                    type: 'application/pdf',
+                }),
+                'form.pdf',
+            );
+            return body;
+        };
+        const { data: before } = await bob.get(`/api/projects/${project.id}`);
+        const open = before.tasks.filter((t) => t.state === 'todo');
+        expect(open.length).toBe(2);
+        expect(before.tasks[0].latestDocument).toMatchObject({
+            filename: 'permit.pdf',
+            uploadedBy: 'Bob',
+        });
+
+        for (const task of open)
+            expect(
+                (await bob.post(`/api/tasks/${task.id}/attachments`, form()))
+                    .status,
+            ).toBe(201);
+
+        const { data: after } = await bob.get(`/api/projects/${project.id}`);
+        expect(after.state).toBe('done');
+        expect(after.tasks.every((t) => t.state === 'done')).toBe(true);
+        expect(after.history[0]).toMatchObject({
+            taskId: null,
+            field: 'state',
+            newValue: 'done',
+            actor: 'Bob',
+        });
+
+        const again = await bob.post(
+            `/api/tasks/${open[0].id}/attachments`,
+            form(),
+        );
+        expect(again.status).toBe(403);
+        const replaced = await boss.post(
+            `/api/tasks/${open[0].id}/attachments`,
+            form(),
+        );
+        expect(replaced.status).toBe(201);
+    });
+
+    test('deactivated users are signed out', async () => {
+        await boss.patch(`/api/users/${aliceId}`, { active: false });
+        expect((await alice.get('/api/auth/me')).status).toBe(401);
+        expect((await alice.login('alice', 'alice-password')).status).toBe(401);
+        const self = await boss.patch(`/api/users/1`, { active: false });
+        expect(self.status).toBe(400);
+    });
+
+    test('blocks cross-site requests', async () => {
+        const { status } = await bob.post(
+            `/api/projects/${project.id}/notes`,
+            { body: 'x' },
+            { origin: 'https://evil.example' },
+        );
+        expect(status).toBe(403);
+    });
+});
