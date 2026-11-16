@@ -21,6 +21,8 @@ export function UsersPage() {
     const { data: users, error, reload } = useLoad(() => api.get('/users'));
     const [editing, setEditing] = useState(null); // null | 'new' | user
     const [testing, setTesting] = useState(false);
+    // { variant, text } shown above the table after an action
+    const [notice, setNotice] = useState(null);
 
     return (
         <>
@@ -48,6 +50,15 @@ export function UsersPage() {
                 </div>
             </div>
 
+            {notice && (
+                <Alert
+                    variant={notice.variant}
+                    dismissible
+                    onClose={() => setNotice(null)}
+                >
+                    {notice.text}
+                </Alert>
+            )}
             {error && <LoadError error={error} onRetry={reload} />}
             {!users && !error && <PageLoader />}
             {users && (
@@ -114,11 +125,23 @@ export function UsersPage() {
                                             )}
                                         </td>
                                         <td>
-                                            {u.active
-                                                ? 'Active'
-                                                : 'Deactivated'}
+                                            {!u.active ? (
+                                                'Deactivated'
+                                            ) : u.hasPassword ? (
+                                                'Active'
+                                            ) : (
+                                                <span className="no-email">
+                                                    Invite pending
+                                                </span>
+                                            )}
                                         </td>
-                                        <td className="text-end pe-4">
+                                        <td className="text-end pe-4 text-nowrap">
+                                            {u.active && u.email && (
+                                                <SendLinkButton
+                                                    user={u}
+                                                    onDone={setNotice}
+                                                />
+                                            )}
                                             <Button
                                                 variant="light"
                                                 size="sm"
@@ -149,14 +172,59 @@ export function UsersPage() {
                 user={editing}
                 isSelf={editing?.id === me.id}
                 onHide={() => setEditing(null)}
-                onSaved={() => {
+                onSaved={(message) => {
                     setEditing(null);
+                    setNotice(message);
                     reload();
                 }}
             />
         </>
     );
 }
+
+// Emails a fresh invite (if they never set a password) or a reset link.
+function SendLinkButton({ user, onDone }) {
+    const [busy, setBusy] = useState(false);
+    const label = user.hasPassword ? 'Send reset link' : 'Resend invite';
+
+    const send = async () => {
+        setBusy(true);
+        try {
+            const { sentTo } = await api.post(
+                `/users/${user.id}/password-link`,
+            );
+            onDone({
+                variant: 'success',
+                text: `${user.hasPassword ? 'Reset link' : 'Invite'} sent to ${sentTo}. It lasts 48 hours.`,
+            });
+        } catch (err) {
+            onDone({
+                variant: 'danger',
+                text: `Couldn't email ${user.displayName}: ${err.message}`,
+            });
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <Button
+            variant="outline-primary"
+            size="sm"
+            className="me-2"
+            onClick={send}
+            disabled={busy}
+        >
+            <FontAwesomeIcon icon={faEnvelope} className="me-1" />
+            {busy ? 'Sending…' : label}
+        </Button>
+    );
+}
+
+SendLinkButton.propTypes = {
+    user: PropTypes.object.isRequired,
+    onDone: PropTypes.func.isRequired,
+};
 
 // Sends a test message and shows exactly why it failed, if it did.
 function TestEmailModal({ show, defaultTo, onHide }) {
@@ -270,6 +338,7 @@ function UserForm({ user, isSelf, onHide, onSaved }) {
     });
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
+    const [manualPassword, setManualPassword] = useState(false);
 
     const set = (key) => (e) =>
         setValues((v) => ({
@@ -291,10 +360,33 @@ function UserForm({ user, isSelf, onHide, onSaved }) {
                     ...rest,
                     ...(password && { password }),
                 });
-            } else {
-                await api.post('/users', values);
+                onSaved({
+                    variant: 'success',
+                    text: `Saved changes to ${values.displayName}.`,
+                });
+                return;
             }
-            onSaved();
+            const { password, ...rest } = values;
+            const created = await api.post('/users', {
+                ...rest,
+                ...(manualPassword && { password }),
+            });
+            onSaved(
+                !created.invite
+                    ? {
+                          variant: 'success',
+                          text: `Added ${created.displayName}. Give them their username and password.`,
+                      }
+                    : created.invite.sent
+                      ? {
+                            variant: 'success',
+                            text: `Added ${created.displayName} and emailed an invite to ${created.email}. The link lasts 48 hours.`,
+                        }
+                      : {
+                            variant: 'warning',
+                            text: `Added ${created.displayName}, but the invite email failed: ${created.invite.error} Use "Send invite" to try again.`,
+                        },
+            );
         } catch (err) {
             setError(err.message);
             setSaving(false);
@@ -343,29 +435,67 @@ function UserForm({ user, isSelf, onHide, onSaved }) {
                         type="email"
                         value={values.email}
                         onChange={set('email')}
-                        placeholder="For task assignment emails"
+                        placeholder="For invites and task assignment emails"
+                        required={!user && !manualPassword}
                     />
                 </Form.Group>
-                <Form.Group className="mb-3" controlId="password">
-                    <Form.Label>
-                        {user ? 'Reset password' : 'Password'}
-                    </Form.Label>
-                    <Form.Control
-                        type="password"
-                        value={values.password}
-                        onChange={set('password')}
-                        autoComplete="new-password"
-                        minLength={8}
-                        required={!user}
-                        placeholder={
-                            user ? 'Leave blank to keep the current one' : ''
-                        }
-                    />
-                    <Form.Text>
-                        At least 8 characters.
-                        {user && ' Resetting signs them out everywhere.'}
-                    </Form.Text>
-                </Form.Group>
+                {!user && !manualPassword && (
+                    <Alert variant="info" className="small">
+                        We&apos;ll email them a link to create their own
+                        password. The link lasts 48 hours.{' '}
+                        <Button
+                            variant="link"
+                            size="sm"
+                            className="p-0 align-baseline"
+                            onClick={() => setManualPassword(true)}
+                        >
+                            Set a password myself instead
+                        </Button>
+                    </Alert>
+                )}
+                {(user || manualPassword) && (
+                    <Form.Group className="mb-3" controlId="password">
+                        <Form.Label>
+                            {user ? 'Reset password' : 'Password'}
+                        </Form.Label>
+                        <Form.Control
+                            type="password"
+                            value={values.password}
+                            onChange={set('password')}
+                            autoComplete="new-password"
+                            minLength={8}
+                            required={!user}
+                            placeholder={
+                                user
+                                    ? 'Leave blank to keep the current one'
+                                    : ''
+                            }
+                        />
+                        <Form.Text>
+                            At least 8 characters.
+                            {user && ' Resetting signs them out everywhere.'}
+                            {!user && (
+                                <>
+                                    {' '}
+                                    <Button
+                                        variant="link"
+                                        size="sm"
+                                        className="p-0 align-baseline"
+                                        onClick={() => {
+                                            setManualPassword(false);
+                                            setValues((v) => ({
+                                                ...v,
+                                                password: '',
+                                            }));
+                                        }}
+                                    >
+                                        Email an invite instead
+                                    </Button>
+                                </>
+                            )}
+                        </Form.Text>
+                    </Form.Group>
+                )}
                 <Form.Check
                     type="switch"
                     id="isSuper"
@@ -396,7 +526,13 @@ function UserForm({ user, isSelf, onHide, onSaved }) {
                     Cancel
                 </Button>
                 <Button type="submit" disabled={saving}>
-                    {saving ? 'Saving…' : user ? 'Save changes' : 'Add user'}
+                    {saving
+                        ? 'Saving…'
+                        : user
+                          ? 'Save changes'
+                          : manualPassword
+                            ? 'Add user'
+                            : 'Add & send invite'}
                 </Button>
             </Modal.Footer>
         </Form>

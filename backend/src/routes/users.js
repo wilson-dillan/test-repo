@@ -8,7 +8,8 @@ const {
     requireUser,
     requireSuper,
 } = require('../auth');
-const { sendTestEmail } = require('../mailer');
+const mailer = require('../mailer');
+const { createToken } = require('../passwordLinks');
 
 const router = express.Router();
 
@@ -57,7 +58,14 @@ router.post('/', requireSuper, async (req, res) => {
         );
     const displayName = cleanDisplayName(req.body.displayName);
     const email = cleanEmail(req.body.email);
-    validatePassword(req.body.password);
+    // Without a password, the new user gets an emailed invite to choose one.
+    const password = req.body.password || null;
+    if (password) validatePassword(password);
+    else if (!email)
+        throw new HttpError(
+            400,
+            'Enter an email address to send the invite to, or set a password yourself.',
+        );
 
     const { rows: existing } = await db.query(
         'SELECT 1 FROM users WHERE username = $1',
@@ -73,11 +81,53 @@ router.post('/', requireSuper, async (req, res) => {
             username,
             displayName,
             email,
-            await hashPassword(req.body.password),
+            password && (await hashPassword(password)),
             Boolean(req.body.isSuper),
         ],
     );
-    res.status(201).send(toPublicUser(rows[0]));
+    const user = toPublicUser(rows[0]);
+    if (password) return res.status(201).send(user);
+
+    // The account exists either way; report whether the invite went out.
+    let invite;
+    try {
+        await mailer.sendPasswordLink(
+            rows[0],
+            await createToken(user.id, 'invite'),
+            req.user,
+        );
+        invite = { sent: true };
+    } catch (err) {
+        invite = { sent: false, error: err.message };
+    }
+    res.status(201).send({ ...user, invite });
+});
+
+// Emails a user a link to choose a password: a fresh invite if they never
+// set one, otherwise a reset link. Both last 48 hours.
+router.post('/:id/password-link', requireSuper, async (req, res) => {
+    const { rows } = await db.query(
+        'SELECT * FROM users WHERE id = $1 AND active',
+        [Number(req.params.id)],
+    );
+    const user = rows[0];
+    if (!user) throw new HttpError(404, 'User not found.');
+    if (!user.email)
+        throw new HttpError(
+            400,
+            `${user.display_name} has no email address. Add one first.`,
+        );
+
+    const link = await createToken(
+        user.id,
+        user.password_hash ? 'reset' : 'invite',
+    );
+    try {
+        await mailer.sendPasswordLink(user, link, req.user);
+    } catch (err) {
+        throw new HttpError(502, err.message);
+    }
+    res.send({ sentTo: user.email, purpose: link.purpose, hours: link.hours });
 });
 
 // Sends a test message so the super user can check email settings. Any
@@ -87,7 +137,7 @@ router.post('/test-email', requireSuper, async (req, res) => {
     if (!to)
         throw new HttpError(400, 'Enter an email address to send the test to.');
     try {
-        await sendTestEmail(to, req.user);
+        await mailer.sendTestEmail(to, req.user);
     } catch (err) {
         throw new HttpError(502, err.message);
     }

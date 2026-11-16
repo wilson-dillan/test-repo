@@ -1,9 +1,10 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import Alert from 'react-bootstrap/Alert';
 import Button from 'react-bootstrap/Button';
 import Form from 'react-bootstrap/Form';
-import logo from '../assets/wilson-logo.png';
 import { useAuth } from '../hooks';
+import { AuthShell } from '../components/AuthShell';
 
 export function LoginPage() {
     const { login } = useAuth();
@@ -25,64 +26,50 @@ export function LoginPage() {
     };
 
     return (
-        <div className="login-page">
-            <section className="login-brand">
-                <div className="logo-card">
-                    <img src={logo} alt="Wilson Services, Inc." />
-                </div>
-                <h2>Every project, task and document in one place.</h2>
-                <p>
-                    Track jobs from first visit to final paperwork, and see who
-                    is working on what.
-                </p>
-                <div className="ring" aria-hidden />
-            </section>
+        <AuthShell>
+            <Form onSubmit={submit}>
+                <h1 className="text-center mb-4">LOGIN</h1>
 
-            <section className="login-form-side">
-                <Form className="login-card panel p-4 p-sm-5" onSubmit={submit}>
-                    <img
-                        src={logo}
-                        alt="Wilson Services, Inc."
-                        className="mobile-logo"
+                {error && <Alert variant="danger">{error}</Alert>}
+
+                <Form.Group className="mb-3" controlId="username">
+                    <Form.Label>Username</Form.Label>
+                    <Form.Control
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        autoComplete="username"
+                        autoCapitalize="none"
+                        autoFocus
+                        required
                     />
-                    <h1 className="text-center mb-4">LOGIN</h1>
-
-                    {error && <Alert variant="danger">{error}</Alert>}
-
-                    <Form.Group className="mb-3" controlId="username">
-                        <Form.Label>Username</Form.Label>
-                        <Form.Control
-                            value={username}
-                            onChange={(e) => setUsername(e.target.value)}
-                            autoComplete="username"
-                            autoCapitalize="none"
-                            autoFocus
-                            required
-                        />
-                    </Form.Group>
-                    <Form.Group className="mb-4" controlId="password">
+                </Form.Group>
+                <Form.Group className="mb-4" controlId="password">
+                    <div className="d-flex justify-content-between align-items-baseline">
                         <Form.Label>Password</Form.Label>
-                        <Form.Control
-                            type="password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            autoComplete="current-password"
-                            required
-                        />
-                    </Form.Group>
-                    <Button
-                        type="submit"
-                        size="lg"
-                        className="w-100"
-                        disabled={submitting}
-                    >
-                        {submitting ? 'Logging in…' : 'Log In'}
-                    </Button>
-                    <p className="text-muted small text-center mt-4 mb-0">
-                        Need an account? Ask your super user.
-                    </p>
-                </Form>
-            </section>
-        </div>
+                        <Link to="/forgot-password" className="small">
+                            Forgot password?
+                        </Link>
+                    </div>
+                    <Form.Control
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        autoComplete="current-password"
+                        required
+                    />
+                </Form.Group>
+                <Button
+                    type="submit"
+                    size="lg"
+                    className="w-100"
+                    disabled={submitting}
+                >
+                    {submitting ? 'Logging in…' : 'Log In'}
+                </Button>
+                <p className="text-muted small text-center mt-4 mb-0">
+                    Need an account? Ask your super user.
+                </p>
+            </Form>
+        </AuthShell>
     );
 }

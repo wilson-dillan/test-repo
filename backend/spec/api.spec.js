@@ -127,6 +127,168 @@ run('API', () => {
         expect(status).toBe(403);
     });
 
+    async function waitFor(condition) {
+        for (let i = 0; i < 100 && !condition(); i++)
+            await new Promise((r) => setTimeout(r, 20));
+        expect(condition()).toBe(true);
+    }
+
+    test('inviting a user emails a 48-hour link to choose a password', async () => {
+        const mailer = require('../src/mailer');
+        const sent = [];
+        const spy = jest
+            .spyOn(mailer, 'sendPasswordLink')
+            .mockImplementation(async (user, link) => {
+                sent.push({ user, link });
+            });
+
+        const { status, data } = await boss.post('/api/users', {
+            username: 'carl',
+            displayName: 'Carl',
+            email: 'carl@example.com',
+        });
+        expect(status).toBe(201);
+        expect(data).toMatchObject({
+            hasPassword: false,
+            invite: { sent: true },
+        });
+        expect(sent[0].link).toMatchObject({ purpose: 'invite', hours: 48 });
+        const token = sent[0].link.token;
+
+        // No password yet, so no way in.
+        expect((await session().login('carl', 'anything-at-all')).status).toBe(
+            401,
+        );
+
+        const info = await session().get(`/api/auth/password-link/${token}`);
+        expect(info.data).toEqual({
+            username: 'carl',
+            displayName: 'Carl',
+            purpose: 'invite',
+        });
+
+        const carl = session();
+        expect(
+            (
+                await carl.post(`/api/auth/password-link/${token}`, {
+                    password: 'short',
+                })
+            ).status,
+        ).toBe(400);
+        const set = await carl.post(`/api/auth/password-link/${token}`, {
+            password: 'carl-password',
+        });
+        expect(set.status).toBe(200);
+        expect(set.data.hasPassword).toBe(true);
+        expect((await carl.get('/api/auth/me')).data.username).toBe('carl');
+
+        // Links work once.
+        expect(
+            (await session().get(`/api/auth/password-link/${token}`)).status,
+        ).toBe(410);
+        expect((await session().login('carl', 'carl-password')).status).toBe(
+            200,
+        );
+
+        // A failed invite email still creates the account and says why.
+        spy.mockRejectedValueOnce(
+            new Error('The mail server rejected the login.'),
+        );
+        const failed = await boss.post('/api/users', {
+            username: 'dora',
+            displayName: 'Dora',
+            email: 'dora@example.com',
+        });
+        expect(failed.status).toBe(201);
+        expect(failed.data.invite).toEqual({
+            sent: false,
+            error: 'The mail server rejected the login.',
+        });
+
+        // An invite needs somewhere to go.
+        expect(
+            (
+                await boss.post('/api/users', {
+                    username: 'eli',
+                    displayName: 'Eli',
+                })
+            ).status,
+        ).toBe(400);
+        spy.mockRestore();
+    });
+
+    test('forgot password emails a 1-hour link and alerts the super user', async () => {
+        const mailer = require('../src/mailer');
+        const links = [];
+        const alerts = [];
+        const linkSpy = jest
+            .spyOn(mailer, 'sendPasswordLink')
+            .mockImplementation(async (user, link) => {
+                links.push({ user, link });
+            });
+        const alertSpy = jest
+            .spyOn(mailer, 'notifyResetRequested')
+            .mockImplementation(async (user, outcome) => {
+                alerts.push({ user, outcome });
+            });
+
+        const anon = session();
+        const unknown = await anon.post('/api/auth/forgot', {
+            login: 'nobody',
+        });
+        const known = await anon.post('/api/auth/forgot', {
+            login: 'ALICE@example.com',
+        });
+        // Same answer either way, so accounts can't be discovered.
+        expect(known.status).toBe(200);
+        expect(unknown.data).toEqual(known.data);
+
+        await waitFor(() => alerts.length === 1);
+        expect(links).toHaveLength(1);
+        expect(links[0].link).toMatchObject({ purpose: 'reset', hours: 1 });
+        expect(alerts[0].user.username).toBe('alice');
+        expect(alerts[0].outcome).toEqual({ linkSent: true });
+
+        // Bob has no email: no link, but the super user still hears about it.
+        await anon.post('/api/auth/forgot', { login: 'bob' });
+        await waitFor(() => alerts.length === 2);
+        expect(links).toHaveLength(1);
+        expect(alerts[1].outcome).toEqual({ linkSent: false });
+
+        // Using the link signs Alice out everywhere else.
+        const reset = await anon.post(
+            `/api/auth/password-link/${links[0].link.token}`,
+            { password: 'alice-new-password' },
+        );
+        expect(reset.status).toBe(200);
+        expect((await alice.get('/api/auth/me')).status).toBe(401);
+        expect((await alice.login('alice', 'alice-new-password')).status).toBe(
+            200,
+        );
+
+        // A link the super user sends lasts 48 hours, and expired links fail.
+        const sent = await boss.post(`/api/users/${aliceId}/password-link`);
+        expect(sent.data).toMatchObject({
+            sentTo: 'alice@example.com',
+            purpose: 'reset',
+            hours: 48,
+        });
+        await db.query(
+            "UPDATE password_tokens SET expires_at = now() - interval '1 minute'",
+        );
+        const expired = await session().get(
+            `/api/auth/password-link/${links[1].link.token}`,
+        );
+        expect(expired.status).toBe(410);
+        expect(expired.data.error).toMatch(/expired/);
+        expect(
+            (await bob.post(`/api/users/${aliceId}/password-link`)).status,
+        ).toBe(403);
+
+        linkSpy.mockRestore();
+        alertSpy.mockRestore();
+    });
+
     test('creating a project creates its numbered tasks', async () => {
         const { status, data } = await alice.post('/api/projects', {
             type: 'whole_home',

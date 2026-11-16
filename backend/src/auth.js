@@ -88,6 +88,8 @@ function toPublicUser(row) {
         email: row.email,
         isSuper: row.is_super,
         active: row.active,
+        // false until an invited user chooses their password
+        hasPassword: Boolean(row.password_hash),
     };
 }
 

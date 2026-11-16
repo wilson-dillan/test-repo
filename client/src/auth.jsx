@@ -27,9 +27,12 @@ export function AuthProvider({ children }) {
 
     const notifyChange = useCallback(() => setVersion((v) => v + 1), []);
 
+    // For flows that log the user in themselves (e.g. setting a password).
+    const signedIn = useCallback((nextUser) => setUser(nextUser), []);
+
     return (
         <AuthContext.Provider
-            value={{ user, login, logout, version, notifyChange }}
+            value={{ user, login, logout, signedIn, version, notifyChange }}
         >
             {children}
         </AuthContext.Provider>

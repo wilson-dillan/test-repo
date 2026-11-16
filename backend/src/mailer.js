@@ -178,9 +178,102 @@ async function sendTestEmail(to, requestedBy) {
     }
 }
 
+// Sends an invite or reset link. Throws an explained error so the caller
+// can show it.
+async function sendPasswordLink(user, { token, purpose, hours }, sentBy) {
+    const url = `${config().appUrl}/set-password?token=${token}`;
+    const invite = purpose === 'invite';
+    const expiry = hours === 1 ? '1 hour' : `${hours} hours`;
+    const intro = invite
+        ? `${sentBy ? `${sentBy.displayName} added` : "You've been added"} you to the Wilson Services project tracker.`
+        : `We received a request to reset your password for the Wilson Services project tracker.`;
+    const action = invite ? 'Create my password' : 'Choose a new password';
+    const ignore = invite
+        ? ''
+        : "If you didn't ask for this, you can ignore this email; your password won't change.";
+    try {
+        await send({
+            to: user.email,
+            subject: invite
+                ? "You're invited to the Wilson Services tracker"
+                : 'Reset your Wilson Services tracker password',
+            text: [
+                `Hi ${user.display_name},`,
+                '',
+                intro,
+                `Your username is: ${user.username}`,
+                '',
+                `${action}: ${url}`,
+                '',
+                `This link works once and expires in ${expiry}.`,
+                ignore,
+            ].join('\n'),
+            html: `<p>Hi ${escapeHtml(user.display_name)},</p>
+<p>${escapeHtml(intro)}</p>
+<p>Your username is: <strong>${escapeHtml(user.username)}</strong></p>
+<p><a href="${escapeHtml(url)}" style="display:inline-block;padding:10px 18px;background:#05438f;color:#fff;border-radius:6px;text-decoration:none;font-weight:600">${action}</a></p>
+<p style="color:#5c6b80">This link works once and expires in ${expiry}. ${escapeHtml(ignore)}</p>`,
+        });
+        console.log(
+            `[email] ${invite ? 'Invite' : 'Reset link'} sent to ${user.email}.`,
+        );
+    } catch (err) {
+        const message =
+            err.code || err.response ? explainError(err) : err.message;
+        console.error(
+            `[email] ${invite ? 'Invite' : 'Reset link'} to ${user.email} failed: ${message}`,
+        );
+        throw new Error(message);
+    }
+}
+
+// Lets every super user know that someone asked to reset their password.
+// Never throws.
+async function notifyResetRequested(user, { linkSent, error }) {
+    try {
+        const { rows: supers } = await db.query(
+            "SELECT email FROM users WHERE is_super AND active AND email IS NOT NULL AND email <> ''",
+        );
+        if (!supers.length || config().problem) {
+            console.log(
+                `[email] Reset alert for ${user.username} not sent: no super user email or email is off.`,
+            );
+            return;
+        }
+        const outcome = linkSent
+            ? `A reset link was emailed to ${user.email}. It expires in 1 hour.`
+            : !user.email
+              ? `${user.display_name} has no email address, so no link was sent. You can set a password for them on the Users page.`
+              : `The reset link could not be sent: ${error}`;
+        const when = new Date().toLocaleString('en-US', {
+            timeZone: process.env.APP_TIMEZONE || 'UTC',
+            dateStyle: 'medium',
+            timeStyle: 'short',
+        });
+        await send({
+            to: supers.map((s) => s.email),
+            subject: `Password reset requested: ${user.display_name}`,
+            text: [
+                `${user.display_name} (username: ${user.username}) asked to reset their password on ${when}.`,
+                '',
+                outcome,
+                '',
+                `If you don't think ${user.display_name} asked for this, you can deactivate the account on the Users page: ${config().appUrl}/users`,
+            ].join('\n'),
+        });
+        console.log(`[email] Reset alert sent for ${user.username}.`);
+    } catch (err) {
+        console.error(
+            `[email] Reset alert for ${user.username} failed: ${explainError(err)}`,
+        );
+    }
+}
+
 module.exports = {
     sendAssignmentEmail,
     sendTestEmail,
+    sendPasswordLink,
+    notifyResetRequested,
     describeConfig,
     explainError,
     config,

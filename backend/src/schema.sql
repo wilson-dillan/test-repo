@@ -82,8 +82,21 @@ CREATE TABLE IF NOT EXISTS history (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- One-time "set your password" links for invites and resets. Only a hash
+-- of each token is stored.
+CREATE TABLE IF NOT EXISTS password_tokens (
+    token_hash text PRIMARY KEY,
+    user_id integer NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    purpose text NOT NULL CHECK (purpose IN ('invite', 'reset')),
+    expires_at timestamptz NOT NULL,
+    used_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- Columns added after the first release, for databases created before them.
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS active boolean NOT NULL DEFAULT true;
+-- Invited users have no password until they choose one.
+ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
 
 CREATE INDEX IF NOT EXISTS tasks_project_id ON tasks (project_id);
 CREATE INDEX IF NOT EXISTS tasks_owner_id ON tasks (owner_id);

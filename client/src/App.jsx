@@ -1,8 +1,10 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from './hooks';
 import { Layout } from './components/Layout';
 import { PageLoader } from './components/ui';
 import { LoginPage } from './pages/LoginPage';
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+import { SetPasswordPage } from './pages/SetPasswordPage';
 import { HomePage } from './pages/HomePage';
 import { DashboardPage } from './pages/DashboardPage';
 import { AddProjectPage } from './pages/AddProjectPage';
@@ -12,8 +14,12 @@ import { UsersPage } from './pages/UsersPage';
 
 function App() {
     const { user } = useAuth();
+    const { pathname } = useLocation();
 
+    // Links from emails work whether or not someone is logged in.
+    if (pathname === '/set-password') return <SetPasswordPage />;
     if (user === undefined) return <PageLoader />;
+    if (!user && pathname === '/forgot-password') return <ForgotPasswordPage />;
     // Logged-out visitors see the login screen at whatever URL they opened,
     // and land on that page once they sign in.
     if (!user) return <LoginPage />;
