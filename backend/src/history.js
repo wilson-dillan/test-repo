@@ -233,7 +233,9 @@ async function listHistory(where, params, limit = 200) {
         users.forEach((u) => names.set(String(u.id), u.display_name));
     }
     const display = (field, value) =>
-        field === 'owner_id' && value ? names.get(value) || 'Unknown' : value;
+        field === 'owner_id' && value
+            ? names.get(value) || 'Deleted user'
+            : value;
 
     return rows.map((row) => ({
         id: row.id,
@@ -241,7 +243,7 @@ async function listHistory(where, params, limit = 200) {
         field: row.field,
         oldValue: display(row.field, row.old_value),
         newValue: display(row.field, row.new_value),
-        actor: row.actor_name,
+        actor: row.actor_name || 'Deleted user',
         createdAt: row.created_at,
         projectId: row.project_id,
         customerName: row.customer_name,
@@ -249,7 +251,7 @@ async function listHistory(where, params, limit = 200) {
         taskCode: row.task_id ? `#${row.project_id}${row.letter}` : null,
         taskName: row.task_name,
         undone: Boolean(row.undone_at),
-        undoneBy: row.undone_by_name,
+        undoneBy: row.undone_by_name || (row.undone_at && 'Deleted user'),
         undoneAt: row.undone_at,
         undoable: row.action === 'update' && !row.undone_at,
     }));

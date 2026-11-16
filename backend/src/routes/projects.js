@@ -52,7 +52,8 @@ async function loadProjectDetail(id) {
             `SELECT t.*, u.display_name AS owner_name,
                     (SELECT count(*) FROM attachments a WHERE a.task_id = t.id) AS attachment_count,
                     doc.id AS doc_id, doc.filename AS doc_filename,
-                    doc.created_at AS doc_created_at, du.display_name AS doc_uploaded_by
+                    doc.created_at AS doc_created_at,
+                    COALESCE(du.display_name, 'Deleted user') AS doc_uploaded_by
              FROM tasks t
              JOIN users u ON u.id = t.owner_id
              LEFT JOIN LATERAL (
@@ -66,7 +67,7 @@ async function loadProjectDetail(id) {
         ),
         db.query(
             `SELECT n.*, u.display_name AS author_name
-             FROM project_notes n JOIN users u ON u.id = n.author_id
+             FROM project_notes n LEFT JOIN users u ON u.id = n.author_id
              WHERE n.project_id = $1 ORDER BY n.created_at DESC, n.id DESC`,
             [id],
         ),
@@ -77,7 +78,7 @@ async function loadProjectDetail(id) {
         tasks: tasks.map(toTask),
         notes: notes.map((n) => ({
             id: n.id,
-            author: n.author_name,
+            author: n.author_name || 'Deleted user',
             body: n.body,
             createdAt: n.created_at,
         })),

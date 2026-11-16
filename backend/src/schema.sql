@@ -97,6 +97,8 @@ CREATE TABLE IF NOT EXISTS password_tokens (
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS active boolean NOT NULL DEFAULT true;
 -- Invited users have no password until they choose one.
 ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
+-- Notes and history keep their place after their author is deleted.
+ALTER TABLE project_notes ALTER COLUMN author_id DROP NOT NULL;
 
 CREATE INDEX IF NOT EXISTS tasks_project_id ON tasks (project_id);
 CREATE INDEX IF NOT EXISTS tasks_owner_id ON tasks (owner_id);

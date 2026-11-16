@@ -348,10 +348,7 @@ function Review({ values, type, owner, onEdit }) {
                     <div className="form-label">Forms to upload</div>
                     <div className="task-preview">
                         {type.tasks.map((task, i) => (
-                            <span key={task.name + i}>
-                                <strong>{String.fromCharCode(97 + i)}</strong>
-                                {task.name}
-                            </span>
+                            <span key={task.name + i}>{task.name}</span>
                         ))}
                     </div>
                 </div>

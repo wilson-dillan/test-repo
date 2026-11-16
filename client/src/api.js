@@ -35,4 +35,4 @@ export async function api(path, { method = 'GET', body } = {}) {
 api.get = (path) => api(path);
 api.post = (path, body) => api(path, { method: 'POST', body });
 api.patch = (path, body) => api(path, { method: 'PATCH', body });
-api.del = (path) => api(path, { method: 'DELETE' });
+api.del = (path, body) => api(path, { method: 'DELETE', body });

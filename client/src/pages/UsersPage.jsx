@@ -7,7 +7,9 @@ import Modal from 'react-bootstrap/Modal';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
     faEnvelope,
+    faLock,
     faPenToSquare,
+    faTrashCan,
     faTriangleExclamation,
     faUserPlus,
     faUserShield,
@@ -142,17 +144,32 @@ export function UsersPage() {
                                                     onDone={setNotice}
                                                 />
                                             )}
-                                            <Button
-                                                variant="light"
-                                                size="sm"
-                                                onClick={() => setEditing(u)}
-                                            >
-                                                <FontAwesomeIcon
-                                                    icon={faPenToSquare}
-                                                    className="me-1"
-                                                />
-                                                Edit
-                                            </Button>
+                                            {u.isSuper && u.id !== me.id ? (
+                                                <span
+                                                    className="protected-tag"
+                                                    title="Super users can only change their own account."
+                                                >
+                                                    <FontAwesomeIcon
+                                                        icon={faLock}
+                                                        className="me-1"
+                                                    />
+                                                    Protected
+                                                </span>
+                                            ) : (
+                                                <Button
+                                                    variant="light"
+                                                    size="sm"
+                                                    onClick={() =>
+                                                        setEditing(u)
+                                                    }
+                                                >
+                                                    <FontAwesomeIcon
+                                                        icon={faPenToSquare}
+                                                        className="me-1"
+                                                    />
+                                                    Edit
+                                                </Button>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}
@@ -171,6 +188,8 @@ export function UsersPage() {
             <UserModal
                 user={editing}
                 isSelf={editing?.id === me.id}
+                users={users || []}
+                meId={me.id}
                 onHide={() => setEditing(null)}
                 onSaved={(message) => {
                     setEditing(null);
@@ -303,31 +322,146 @@ TestEmailModal.propTypes = {
     onHide: PropTypes.func.isRequired,
 };
 
-function UserModal({ user, isSelf, onHide, onSaved }) {
+function UserModal({ user, isSelf, users, meId, onHide, onSaved }) {
     const isNew = user === 'new';
+    const [deleting, setDeleting] = useState(false);
     return (
-        <Modal show={Boolean(user)} onHide={onHide} centered>
-            {user && (
+        <Modal
+            show={Boolean(user)}
+            onHide={onHide}
+            onExited={() => setDeleting(false)}
+            centered
+        >
+            {user && !deleting && (
                 <UserForm
                     key={isNew ? 'new' : user.id}
                     user={isNew ? null : user}
                     isSelf={isSelf}
                     onHide={onHide}
                     onSaved={onSaved}
+                    onDelete={() => setDeleting(true)}
+                />
+            )}
+            {user && deleting && (
+                <DeleteUser
+                    user={user}
+                    users={users}
+                    meId={meId}
+                    onBack={() => setDeleting(false)}
+                    onDeleted={onSaved}
                 />
             )}
         </Modal>
     );
 }
 
+// Deleting removes the person but keeps their work: projects and tasks
+// move to someone else, and history shows "Deleted user".
+function DeleteUser({ user, users, meId, onBack, onDeleted }) {
+    const others = users.filter((u) => u.active && u.id !== user.id);
+    const [reassignTo, setReassignTo] = useState(String(meId));
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const owns = user.ownedProjects + user.ownedTasks > 0;
+    const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+    const ownedText = [
+        user.ownedProjects && plural(user.ownedProjects, 'project'),
+        user.ownedTasks && plural(user.ownedTasks, 'task'),
+    ]
+        .filter(Boolean)
+        .join(' and ');
+
+    const remove = async () => {
+        setBusy(true);
+        setError(null);
+        try {
+            await api.del(
+                `/users/${user.id}`,
+                owns ? { reassignTo: Number(reassignTo) } : undefined,
+            );
+            const heir = others.find((u) => String(u.id) === reassignTo);
+            onDeleted({
+                variant: 'success',
+                text: owns
+                    ? `Deleted ${user.displayName}. Their ${ownedText} now ${user.ownedProjects + user.ownedTasks === 1 ? 'belongs' : 'belong'} to ${heir?.displayName}.`
+                    : `Deleted ${user.displayName}.`,
+            });
+        } catch (err) {
+            setError(err.message);
+            setBusy(false);
+        }
+    };
+
+    return (
+        <>
+            <Modal.Header closeButton={!busy}>
+                <Modal.Title>Delete {user.displayName}?</Modal.Title>
+            </Modal.Header>
+            <Modal.Body>
+                <p>
+                    {user.displayName} will be removed and can no longer log in.
+                    Anything they did stays in the history, shown as
+                    &ldquo;Deleted user&rdquo;.{' '}
+                    <strong>This can&apos;t be undone.</strong>
+                </p>
+                {owns && (
+                    <Form.Group controlId="reassignTo" className="mb-3">
+                        <Form.Label>
+                            {user.displayName} owns {ownedText}. Give them to:
+                        </Form.Label>
+                        <Form.Select
+                            value={reassignTo}
+                            onChange={(e) => setReassignTo(e.target.value)}
+                        >
+                            {others.map((u) => (
+                                <option key={u.id} value={u.id}>
+                                    {u.displayName}
+                                </option>
+                            ))}
+                        </Form.Select>
+                    </Form.Group>
+                )}
+                <p className="text-muted small mb-0">
+                    Only want to stop them logging in? Go back and switch off
+                    &ldquo;Active&rdquo; instead. That can be reversed.
+                </p>
+                {error && (
+                    <Alert variant="danger" className="mt-3 mb-0">
+                        {error}
+                    </Alert>
+                )}
+            </Modal.Body>
+            <Modal.Footer>
+                <Button variant="light" onClick={onBack} disabled={busy}>
+                    Back
+                </Button>
+                <Button variant="danger" onClick={remove} disabled={busy}>
+                    <FontAwesomeIcon icon={faTrashCan} className="me-2" />
+                    {busy ? 'Deleting…' : 'Delete forever'}
+                </Button>
+            </Modal.Footer>
+        </>
+    );
+}
+
+DeleteUser.propTypes = {
+    user: PropTypes.object.isRequired,
+    users: PropTypes.array.isRequired,
+    meId: PropTypes.number.isRequired,
+    onBack: PropTypes.func.isRequired,
+    onDeleted: PropTypes.func.isRequired,
+};
+
 UserModal.propTypes = {
     user: PropTypes.oneOfType([PropTypes.string, PropTypes.object]),
     isSelf: PropTypes.bool,
+    users: PropTypes.array.isRequired,
+    meId: PropTypes.number.isRequired,
     onHide: PropTypes.func.isRequired,
     onSaved: PropTypes.func.isRequired,
 };
 
-function UserForm({ user, isSelf, onHide, onSaved }) {
+function UserForm({ user, isSelf, onHide, onSaved, onDelete }) {
     const [values, setValues] = useState({
         displayName: user?.displayName || '',
         username: user?.username || '',
@@ -360,6 +494,11 @@ function UserForm({ user, isSelf, onHide, onSaved }) {
                     ...rest,
                     ...(password && { password }),
                 });
+                // Stepping down takes away this page; start over as a member.
+                if (isSelf && !values.isSuper) {
+                    window.location.assign('/');
+                    return;
+                }
                 onSaved({
                     variant: 'success',
                     text: `Saved changes to ${values.displayName}.`,
@@ -502,9 +641,14 @@ function UserForm({ user, isSelf, onHide, onSaved }) {
                     label="Super user (can undo changes and manage users)"
                     checked={values.isSuper}
                     onChange={set('isSuper')}
-                    disabled={isSelf}
                     className="mb-2"
                 />
+                {isSelf && !values.isSuper && (
+                    <Alert variant="warning" className="small py-2">
+                        You&apos;re removing your own super user access. Once
+                        saved, only another super user could give it back.
+                    </Alert>
+                )}
                 {user && (
                     <Form.Check
                         type="switch"
@@ -522,6 +666,17 @@ function UserForm({ user, isSelf, onHide, onSaved }) {
                 )}
             </Modal.Body>
             <Modal.Footer>
+                {user && !isSelf && (
+                    <Button
+                        variant="link"
+                        className="text-danger me-auto px-0"
+                        onClick={onDelete}
+                        disabled={saving}
+                    >
+                        <FontAwesomeIcon icon={faTrashCan} className="me-2" />
+                        Delete user
+                    </Button>
+                )}
                 <Button variant="light" onClick={onHide} disabled={saving}>
                     Cancel
                 </Button>
@@ -544,4 +699,5 @@ UserForm.propTypes = {
     isSelf: PropTypes.bool,
     onHide: PropTypes.func.isRequired,
     onSaved: PropTypes.func.isRequired,
+    onDelete: PropTypes.func,
 };

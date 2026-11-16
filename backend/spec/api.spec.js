@@ -62,7 +62,7 @@ run('API', () => {
             get: (p) => call('GET', p),
             post: (p, b, h) => call('POST', p, b, h),
             patch: (p, b) => call('PATCH', p, b),
-            del: (p) => call('DELETE', p),
+            del: (p, b) => call('DELETE', p, b),
             login: (username, password) =>
                 call('POST', '/api/auth/login', { username, password }),
         };
@@ -632,6 +632,115 @@ run('API', () => {
         const { data: feed } = await boss.get('/api/activity?limit=200');
         expect(feed.some((h) => h.projectId === doomed.id)).toBe(false);
         expect((await boss.del(`/api/projects/${doomed.id}`)).status).toBe(404);
+    });
+
+    test('the super user can delete a user, handing over their work', async () => {
+        const doraId = (await boss.get('/api/users')).data.find(
+            (u) => u.username === 'dora',
+        ).id;
+        const { data: owned } = await boss.post('/api/projects', {
+            type: 'partial_home',
+            customerName: 'Dora Customer',
+            address: '9 Pine St',
+            ownerId: doraId,
+            note: 'Left by Dora',
+        });
+        const { data: users } = await boss.get('/api/users');
+        expect(users.find((u) => u.id === doraId)).toMatchObject({
+            ownedProjects: 1,
+            ownedTasks: 3,
+        });
+
+        expect((await bob.del(`/api/users/${doraId}`)).status).toBe(403);
+        expect((await boss.del('/api/users/1')).status).toBe(400);
+        const noTarget = await boss.del(`/api/users/${doraId}`);
+        expect(noTarget.status).toBe(400);
+        expect(noTarget.data.error).toMatch(/Choose who takes them over/);
+
+        const done = await boss.del(`/api/users/${doraId}`, {
+            reassignTo: bobId,
+        });
+        expect(done.status).toBe(200);
+        expect(done.data).toEqual({
+            deleted: 'Dora',
+            reassigned: { projects: 1, tasks: 3 },
+        });
+
+        const { data: after } = await boss.get(`/api/projects/${owned.id}`);
+        expect(after.owner.name).toBe('Bob');
+        expect(after.tasks.every((t) => t.owner.name === 'Bob')).toBe(true);
+        expect(after.history[0]).toMatchObject({
+            field: 'owner_id',
+            oldValue: 'Deleted user',
+            newValue: 'Bob',
+        });
+        expect(
+            (await boss.get('/api/users')).data.some((u) => u.id === doraId),
+        ).toBe(false);
+
+        // Someone with history and notes of their own.
+        const carlId = (await boss.get('/api/users')).data.find(
+            (u) => u.username === 'carl',
+        ).id;
+        const carl = session();
+        await carl.login('carl', 'carl-password');
+        await carl.post(`/api/projects/${owned.id}/notes`, {
+            body: 'Carl was here',
+        });
+        await carl.patch(`/api/projects/${owned.id}`, {
+            address: '10 Pine St',
+        });
+        expect((await boss.del(`/api/users/${carlId}`)).status).toBe(200);
+        const { data: kept } = await boss.get(`/api/projects/${owned.id}`);
+        expect(kept.notes[0]).toMatchObject({
+            author: 'Deleted user',
+            body: 'Carl was here',
+        });
+        expect(kept.history.find((h) => h.field === 'address').actor).toBe(
+            'Deleted user',
+        );
+        expect((await carl.get('/api/auth/me')).status).toBe(401);
+    });
+
+    test("super users can't delete, demote or edit each other", async () => {
+        const { data: sue } = await boss.post('/api/users', {
+            username: 'sue',
+            displayName: 'Sue',
+            password: 'sue-password',
+            isSuper: true,
+        });
+        expect(sue.isSuper).toBe(true);
+
+        for (const change of [
+            { isSuper: false },
+            { active: false },
+            { password: 'taken-over-1' },
+            { email: 'attacker@example.com' },
+            { displayName: 'Not Sue' },
+        ]) {
+            const res = await boss.patch(`/api/users/${sue.id}`, change);
+            expect(res.status).toBe(403);
+            expect(res.data.error).toMatch(/Only they can change/);
+        }
+        const del = await boss.del(`/api/users/${sue.id}`);
+        expect(del.status).toBe(403);
+
+        // Sue can step down herself while another super user remains...
+        const sueSession = session();
+        await sueSession.login('sue', 'sue-password');
+        expect((await sueSession.del('/api/users/1')).status).toBe(403);
+        const stepDown = await sueSession.patch(`/api/users/${sue.id}`, {
+            isSuper: false,
+        });
+        expect(stepDown.data.isSuper).toBe(false);
+
+        // ...after which she's an ordinary user who can be removed.
+        expect((await boss.del(`/api/users/${sue.id}`)).status).toBe(200);
+
+        // The last super user can't step down.
+        const last = await boss.patch('/api/users/1', { isSuper: false });
+        expect(last.status).toBe(400);
+        expect(last.data.error).toMatch(/only super user/);
     });
 
     test('deactivated users are signed out', async () => {

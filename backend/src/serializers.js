@@ -57,7 +57,7 @@ function toAttachment(row) {
         filename: row.filename,
         mimeType: row.mime_type,
         size: row.size,
-        uploadedBy: row.uploaded_by_name,
+        uploadedBy: row.uploaded_by_name || 'Deleted user',
         createdAt: row.created_at,
     };
 }
