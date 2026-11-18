@@ -183,6 +183,7 @@ function ProjectDetail({ project, users, type, options, onUpdate, reload }) {
                             <FormRow
                                 key={task.id}
                                 task={task}
+                                customerName={project.customerName}
                                 users={users}
                                 onChanged={reload}
                                 readOnly={!project.active}

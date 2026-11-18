@@ -98,6 +98,20 @@ CREATE TABLE IF NOT EXISTS password_tokens (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Problems people report from inside the app ("Report a problem").
+CREATE TABLE IF NOT EXISTS bug_reports (
+    id serial PRIMARY KEY,
+    user_id integer REFERENCES users (id) ON DELETE SET NULL,
+    page text NOT NULL,
+    description text NOT NULL,
+    browser text,
+    resolved_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE bug_reports ADD COLUMN IF NOT EXISTS screenshot bytea;
+ALTER TABLE bug_reports ADD COLUMN IF NOT EXISTS screenshot_type text;
+
 -- Columns added after the first release, for databases created before them.
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS active boolean NOT NULL DEFAULT true;
 -- Invited users have no password until they choose one.

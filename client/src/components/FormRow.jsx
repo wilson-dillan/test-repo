@@ -13,6 +13,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../api';
 import { useAuth } from '../hooks';
+import { announceAssignment, useToast } from '../toastContext';
 import { formatDateTime } from '../format';
 import { ACCEPT_ATTRIBUTE, checkFiles, isViewable, uploadForm } from './files';
 import { UploadConfirm } from './UploadConfirm';
@@ -21,8 +22,9 @@ import { UploadConfirm } from './UploadConfirm';
 // button or a link to view the uploaded document. Files can also be
 // dropped onto the row.
 // `readOnly` (inactive applications) shows the row without any actions.
-export function FormRow({ task, users, onChanged, readOnly }) {
+export function FormRow({ task, customerName, users, onChanged, readOnly }) {
     const { user, notifyChange } = useAuth();
+    const showToast = useToast();
     const input = useRef(null);
     const [pending, setPending] = useState([]);
     const [dragging, setDragging] = useState(false);
@@ -53,9 +55,10 @@ export function FormRow({ task, users, onChanged, readOnly }) {
         setSavingOwner(true);
         setError(null);
         try {
-            await api.patch(`/tasks/${task.id}`, {
+            const updated = await api.patch(`/tasks/${task.id}`, {
                 ownerId: Number(e.target.value),
             });
+            announceAssignment(showToast, updated.assignmentEmail);
             onChanged();
             notifyChange();
         } catch (err) {
@@ -205,6 +208,7 @@ export function FormRow({ task, users, onChanged, readOnly }) {
 
             <UploadConfirm
                 task={task}
+                customerName={customerName}
                 files={pending}
                 onCancel={() => setPending([])}
                 onConfirm={upload}
@@ -215,6 +219,7 @@ export function FormRow({ task, users, onChanged, readOnly }) {
 
 FormRow.propTypes = {
     task: PropTypes.object.isRequired,
+    customerName: PropTypes.string.isRequired,
     users: PropTypes.array.isRequired,
     onChanged: PropTypes.func.isRequired,
     readOnly: PropTypes.bool,

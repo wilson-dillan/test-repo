@@ -155,7 +155,7 @@ router.delete('/:id', requireSuper, async (req, res) => {
         if (rows[0].is_super)
             throw new HttpError(
                 403,
-                `${rows[0].display_name} is a super user and can't be deleted by another super user.`,
+                `${rows[0].display_name} is an admin and can't be deleted by another admin.`,
             );
 
         const { rows: owned } = await client.query(
@@ -258,7 +258,7 @@ router.patch('/:id', requireSuper, async (req, res) => {
     if (found[0].is_super && !isSelf)
         throw new HttpError(
             403,
-            `${found[0].display_name} is a super user. Only they can change their own account.`,
+            `${found[0].display_name} is an admin. Only they can change their own account.`,
         );
     const updates = {};
     const body = req.body || {};
@@ -280,7 +280,7 @@ router.patch('/:id', requireSuper, async (req, res) => {
             if (!others.length)
                 throw new HttpError(
                     400,
-                    "You're the only super user, so you can't remove your own super user access.",
+                    "You're the only admin, so you can't remove your own admin access.",
                 );
         }
         updates.is_super = Boolean(body.isSuper);

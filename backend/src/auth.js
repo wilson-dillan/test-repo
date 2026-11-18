@@ -115,7 +115,7 @@ function requireUser(req, res, next) {
 function requireSuper(req, res, next) {
     if (!req.user) throw new HttpError(401, 'Please log in.');
     if (!req.user.isSuper)
-        throw new HttpError(403, 'Only the super user can do that.');
+        throw new HttpError(403, 'Only an admin can do that.');
     next();
 }
 

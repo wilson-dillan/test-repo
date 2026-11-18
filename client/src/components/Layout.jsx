@@ -4,6 +4,7 @@ import Button from 'react-bootstrap/Button';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
     faBars,
+    faBug,
     faChartColumn,
     faCirclePlus,
     faHouse,
@@ -13,11 +14,13 @@ import {
 import logo from '../assets/wilson-logo.png';
 import { useAuth } from '../hooks';
 import { ProjectSearch } from './ProjectSearch';
+import { ReportProblem } from './ReportProblem';
 import { Avatar } from './ui';
 
 export function Layout() {
     const { user, logout } = useAuth();
     const [menuOpen, setMenuOpen] = useState(false);
+    const [reporting, setReporting] = useState(false);
     const location = useLocation();
 
     useEffect(() => setMenuOpen(false), [location.pathname]);
@@ -75,16 +78,26 @@ export function Layout() {
                         <>
                             <div className="sidebar-section">Admin</div>
                             {link('/users', faUsers, 'Users')}
+                            {link('/reports', faBug, 'Problem reports')}
                         </>
                     )}
                 </nav>
+
+                <button
+                    type="button"
+                    className="sidebar-report"
+                    onClick={() => setReporting(true)}
+                >
+                    <FontAwesomeIcon icon={faBug} />
+                    Report a problem
+                </button>
 
                 <div className="sidebar-user">
                     <Avatar name={user.displayName} />
                     <div className="min-w-0">
                         <div className="name">{user.displayName}</div>
                         <div className="role">
-                            {user.isSuper ? 'Super user' : 'Team member'}
+                            {user.isSuper ? 'Admin' : 'Team member'}
                         </div>
                     </div>
                     <Button
@@ -102,6 +115,11 @@ export function Layout() {
             <main className="main">
                 <Outlet />
             </main>
+
+            <ReportProblem
+                show={reporting}
+                onHide={() => setReporting(false)}
+            />
         </div>
     );
 }

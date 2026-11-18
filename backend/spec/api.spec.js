@@ -807,7 +807,7 @@ run('API', () => {
         // The last super user can't step down.
         const last = await boss.patch('/api/users/1', { isSuper: false });
         expect(last.status).toBe(400);
-        expect(last.data.error).toMatch(/only super user/);
+        expect(last.data.error).toMatch(/only admin/);
     });
 
     function pdfForm() {
@@ -1220,6 +1220,84 @@ run('API', () => {
                 .status,
         ).toBe(200);
         await boss.del(`/api/projects/${p.id}`);
+    });
+
+    test('reassigning says whether the new owner gets an email', async () => {
+        const { data: created } = await bob.post('/api/projects', {
+            type: 'basic_rebate',
+            financing: false,
+            customerFirstName: 'Notice',
+            customerLastName: 'Test',
+            address: '1 Notice St',
+            ownerId: bobId,
+        });
+        const task = created.tasks[0];
+        const toSelf = await bob.patch(`/api/tasks/${task.id}`, {
+            ownerId: aliceId,
+        });
+        expect(toSelf.data.assignmentEmail.name).toBe('Alice');
+        const back = await bob.patch(`/api/tasks/${task.id}`, {
+            ownerId: bobId,
+        });
+        expect(back.data.assignmentEmail).toEqual({
+            name: 'Bob',
+            reason: 'you assigned it to yourself',
+        });
+        const notes = await bob.patch(`/api/tasks/${task.id}`, {
+            notes: 'no reassignment',
+        });
+        expect(notes.data.assignmentEmail).toBeUndefined();
+        await boss.del(`/api/projects/${created.id}`);
+    });
+
+    test('anyone can report a problem; only the super user sees them', async () => {
+        const empty = await bob.post('/api/reports', { description: '  ' });
+        expect(empty.status).toBe(400);
+        const { status, data } = await bob.post('/api/reports', {
+            description: 'The upload button did nothing',
+            page: '/projects/1',
+        });
+        expect(status).toBe(201);
+        expect(data).toMatchObject({ reportedBy: 'Bob', page: '/projects/1' });
+        expect((await bob.get('/api/reports')).status).toBe(403);
+        const list = await boss.get('/api/reports');
+        expect(list.data[0].description).toBe('The upload button did nothing');
+        const resolved = await boss.patch(`/api/reports/${data.id}`, {
+            resolved: true,
+        });
+        expect(resolved.data.resolvedAt).toBeTruthy();
+        expect(
+            (await bob.patch(`/api/reports/${data.id}`, { resolved: false }))
+                .status,
+        ).toBe(403);
+
+        // With a screenshot: only real images, viewable by the admin only.
+        const png = Buffer.from(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+            'base64',
+        );
+        const form = new FormData();
+        form.append('description', 'With a picture');
+        form.append('screenshot', new Blob([png]), 'shot.png');
+        const withShot = await bob.post('/api/reports', form);
+        expect(withShot.status).toBe(201);
+        expect(withShot.data.hasScreenshot).toBe(true);
+        const image = await boss.get(
+            `/api/reports/${withShot.data.id}/screenshot`,
+        );
+        expect(image.status).toBe(200);
+        expect(
+            (await bob.get(`/api/reports/${withShot.data.id}/screenshot`))
+                .status,
+        ).toBe(403);
+        const fake = new FormData();
+        fake.append('description', 'Fake picture');
+        fake.append('screenshot', new Blob(['not an image']), 'shot.png');
+        expect((await bob.post('/api/reports', fake)).status).toBe(400);
+        const pdf = new FormData();
+        pdf.append('description', 'Wrong type');
+        pdf.append('screenshot', new Blob(['%PDF-1.4']), 'shot.pdf');
+        expect((await bob.post('/api/reports', pdf)).status).toBe(400);
     });
 
     test('deactivated users are signed out', async () => {

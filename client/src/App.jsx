@@ -11,6 +11,7 @@ import { AddProjectPage } from './pages/AddProjectPage';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { TaskDetailPage } from './pages/TaskDetailPage';
 import { UsersPage } from './pages/UsersPage';
+import { ReportsPage } from './pages/ReportsPage';
 
 function App() {
     const { user } = useAuth();
@@ -33,6 +34,9 @@ function App() {
                 <Route path="projects/:id" element={<ProjectDetailPage />} />
                 <Route path="tasks/:id" element={<TaskDetailPage />} />
                 {user.isSuper && <Route path="users" element={<UsersPage />} />}
+                {user.isSuper && (
+                    <Route path="reports" element={<ReportsPage />} />
+                )}
                 <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
         </Routes>

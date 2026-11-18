@@ -21,6 +21,7 @@ import {
     formatFileSize,
     uploadForm,
 } from '../components/files';
+import { announceAssignment, useToast } from '../toastContext';
 import { UploadConfirm } from '../components/UploadConfirm';
 import { HistoryTimeline } from '../components/HistoryTimeline';
 import { StateControl } from '../components/StateControl';
@@ -49,9 +50,12 @@ export function TaskDetailPage() {
 
 function TaskDetail({ task, users, onUpdate }) {
     const { notifyChange } = useAuth();
+    const showToast = useToast();
 
     const update = async (changes) => {
-        onUpdate(await api.patch(`/tasks/${task.id}`, changes));
+        const updated = await api.patch(`/tasks/${task.id}`, changes);
+        announceAssignment(showToast, updated.assignmentEmail);
+        onUpdate(updated);
         notifyChange();
     };
 
@@ -271,7 +275,7 @@ function AddFiles({ task, onUploaded }) {
         return (
             <section className="panel">
                 <EmptyState icon={faLock}>
-                    Uploaded. Only the super user can replace it.
+                    Uploaded. Only an admin can replace it.
                 </EmptyState>
             </section>
         );
@@ -330,6 +334,7 @@ function AddFiles({ task, onUploaded }) {
             {error && <div className="small text-danger mt-2">{error}</div>}
             <UploadConfirm
                 task={task}
+                customerName={task.customerName}
                 files={pending}
                 onCancel={() => setPending([])}
                 onConfirm={upload}

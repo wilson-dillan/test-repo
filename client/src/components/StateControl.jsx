@@ -50,7 +50,7 @@ export function StateControl({
             {state === 'done' && !user.isSuper && (
                 <span className="lock-note">
                     <FontAwesomeIcon icon={faLock} className="me-1" />
-                    Only the super user can reopen this.
+                    Only an admin can reopen this.
                 </span>
             )}
 
@@ -63,8 +63,8 @@ export function StateControl({
                 confirmLabel="Yes, mark as done"
                 confirmVariant="success"
             >
-                Once this {what} is done, it can&apos;t be undone. Only the
-                super user can reopen it.
+                Once this {what} is done, it can&apos;t be undone. Only an admin
+                can reopen it.
             </ConfirmModal>
             <ConfirmModal
                 show={confirming === 'todo'}
@@ -121,7 +121,7 @@ export function ActiveControl({ active, onChange }) {
                     <strong>This can&apos;t be undone.</strong> An inactive
                     application can no longer be edited: no uploads, notes,
                     reassignments or changes. It stays listed with an Inactive
-                    label. Only the super user can reactivate it.
+                    label. Only an admin can reactivate it.
                 </p>
                 <p className="mb-0">
                     Note: applications can&apos;t be deleted once created.

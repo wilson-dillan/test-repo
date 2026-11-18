@@ -19,7 +19,13 @@ function previewKind(file) {
 
 // "Is this the right document?" before uploading, with a preview and a
 // link to open each chosen file in a new tab. Uploading completes the task.
-export function UploadConfirm({ task, files, onCancel, onConfirm }) {
+export function UploadConfirm({
+    task,
+    customerName,
+    files,
+    onCancel,
+    onConfirm,
+}) {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState(null);
     // Large PDFs and photos can take a moment to draw.
@@ -64,9 +70,12 @@ export function UploadConfirm({ task, files, onCancel, onConfirm }) {
             className="upload-confirm"
         >
             <Modal.Body className="p-4">
-                <h2 className="h4 mb-3 text-center">
+                <h2 className="h4 mb-1 text-center">
                     Is this the {formLabel(task.name)}?
                 </h2>
+                <div className="confirm-customer">
+                    For <strong>{customerName}</strong> · {task.code}
+                </div>
 
                 {first && (
                     <a
@@ -148,6 +157,7 @@ export function UploadConfirm({ task, files, onCancel, onConfirm }) {
 
 UploadConfirm.propTypes = {
     task: PropTypes.object.isRequired,
+    customerName: PropTypes.string.isRequired,
     files: PropTypes.array.isRequired,
     onCancel: PropTypes.func.isRequired,
     onConfirm: PropTypes.func.isRequired,

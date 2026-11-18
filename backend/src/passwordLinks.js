@@ -6,8 +6,8 @@ const { HttpError } = require('./errors');
 // new user, or a "reset" for an existing one. Only a hash of the token is
 // stored, like a password.
 const LIFETIME_HOURS = {
-    invite: 48, // sent by the super user to a new user
-    reset: 48, // sent by the super user from the Users page
+    invite: 48, // sent by an admin to a new user
+    reset: 48, // sent by an admin from the Users page
     forgot: 1, // requested by anyone from the login page
 };
 
@@ -51,7 +51,7 @@ async function findToken(token) {
     if (row.expires_at < new Date())
         throw new HttpError(
             410,
-            'This link has expired. Use "Forgot password?" on the login page, or ask your super user to send a new one.',
+            'This link has expired. Use "Forgot password?" on the login page, or ask your admin to send a new one.',
         );
     return row;
 }

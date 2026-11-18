@@ -166,7 +166,7 @@ async function record(client, entry) {
 // changed field. Only the super user may move something from Done back to
 // To Do. Returns the changed fields.
 const INACTIVE_MESSAGE =
-    "This application is inactive, so it can't be edited. Only the super user can reactivate it.";
+    "This application is inactive, so it can't be edited. Only an admin can reactivate it.";
 
 // Throws if the project is inactive (read-only).
 async function assertProjectEditable(client, projectId) {
@@ -272,7 +272,7 @@ async function applyChanges(client, kind, id, changes, user) {
         )
             throw new HttpError(
                 403,
-                'This application has already been submitted, and that would add a document to upload. Only the super user can change it.',
+                'This application has already been submitted, and that would add a document to upload. Only an admin can change it.',
             );
     }
 
@@ -288,13 +288,13 @@ async function applyChanges(client, kind, id, changes, user) {
             throw new HttpError(
                 403,
                 oldValue === 'done'
-                    ? 'This is marked done. Only the super user can reopen it.'
-                    : 'This has been submitted. Only the super user can move it back.',
+                    ? 'This is marked done. Only an admin can reopen it.'
+                    : 'This has been submitted. Only an admin can move it back.',
             );
         if (field === 'active' && oldValue === 'false' && !user.isSuper)
             throw new HttpError(
                 403,
-                'This project is inactive. Only the super user can reactivate it.',
+                'This project is inactive. Only an admin can reactivate it.',
             );
         changed.push({ field, oldValue, newValue });
     }

@@ -67,7 +67,7 @@ export function LoginPage() {
                     {submitting ? 'Logging in…' : 'Log In'}
                 </Button>
                 <p className="text-muted small text-center mt-4 mb-0">
-                    Need an account? Ask your super user.
+                    Need an account? Ask your admin.
                 </p>
             </Form>
         </AuthShell>

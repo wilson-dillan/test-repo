@@ -125,6 +125,23 @@ function assignmentMail(user, tasks, assignedBy) {
 // Tells a user about tasks newly assigned to them. Never throws: a mail
 // problem must not fail the change that triggered it. Every skip or
 // failure is logged with the reason.
+// Whether reassigning to `userId` emails them, for the notice shown to
+// the person who reassigned it: { name, email } or { name, reason }.
+async function assignmentNotice(userId, assignedBy) {
+    const { rows } = await db.query(
+        'SELECT id, display_name, email FROM users WHERE id = $1',
+        [userId],
+    );
+    const user = rows[0];
+    if (!user) return null;
+    const name = user.display_name;
+    if (user.id === assignedBy.id)
+        return { name, reason: 'you assigned it to yourself' };
+    if (!user.email) return { name, reason: `${name} has no email address` };
+    if (config().problem) return { name, reason: 'email is not set up' };
+    return { name, email: user.email };
+}
+
 async function sendAssignmentEmail(userId, tasks, assignedBy) {
     const label = tasks.map((t) => t.code).join(', ');
     try {
@@ -269,8 +286,44 @@ async function notifyResetRequested(user, { linkSent, error }) {
     }
 }
 
+// Tells the super users about a problem someone reported in the app.
+async function notifyBugReport(report, reporter) {
+    try {
+        const { rows: supers } = await db.query(
+            "SELECT email FROM users WHERE is_super AND active AND email IS NOT NULL AND email <> ''",
+        );
+        if (!supers.length || config().problem) {
+            console.log(
+                `[email] Problem report #${report.id} not emailed: no super user email or email is off.`,
+            );
+            return;
+        }
+        await send({
+            to: supers.map((s) => s.email),
+            subject: `Problem reported by ${reporter.displayName}: #${report.id}`,
+            text: [
+                `${reporter.displayName} reported a problem on ${config().appUrl}${report.page}`,
+                '',
+                report.description,
+                '',
+                ...(report.hasScreenshot
+                    ? ['A screenshot is included. See it on the reports page.']
+                    : []),
+                `See all reports: ${config().appUrl}/reports`,
+            ].join('\n'),
+        });
+        console.log(`[email] Problem report #${report.id} sent.`);
+    } catch (err) {
+        console.error(
+            `[email] Problem report #${report.id} failed: ${explainError(err)}`,
+        );
+    }
+}
+
 module.exports = {
     sendAssignmentEmail,
+    assignmentNotice,
+    notifyBugReport,
     sendTestEmail,
     sendPasswordLink,
     notifyResetRequested,

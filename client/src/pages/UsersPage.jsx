@@ -118,7 +118,7 @@ export function UsersPage() {
                                                     <FontAwesomeIcon
                                                         icon={faUserShield}
                                                     />
-                                                    Super user
+                                                    Admin
                                                 </span>
                                             ) : (
                                                 <span className="role-badge">
@@ -147,7 +147,7 @@ export function UsersPage() {
                                             {u.isSuper && u.id !== me.id ? (
                                                 <span
                                                     className="protected-tag"
-                                                    title="Super users can only change their own account."
+                                                    title="Admins can only change their own account."
                                                 >
                                                     <FontAwesomeIcon
                                                         icon={faLock}
@@ -638,15 +638,15 @@ function UserForm({ user, isSelf, onHide, onSaved, onDelete }) {
                 <Form.Check
                     type="switch"
                     id="isSuper"
-                    label="Super user (can undo changes and manage users)"
+                    label="Admin (can undo changes and manage users)"
                     checked={values.isSuper}
                     onChange={set('isSuper')}
                     className="mb-2"
                 />
                 {isSelf && !values.isSuper && (
                     <Alert variant="warning" className="small py-2">
-                        You&apos;re removing your own super user access. Once
-                        saved, only another super user could give it back.
+                        You&apos;re removing your own admin access. Once saved,
+                        only another admin could give it back.
                     </Alert>
                 )}
                 {user && (

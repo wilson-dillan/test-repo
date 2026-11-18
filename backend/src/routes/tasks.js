@@ -8,7 +8,7 @@ const {
     listHistory,
     assertProjectEditable,
 } = require('../history');
-const { sendAssignmentEmail } = require('../mailer');
+const { sendAssignmentEmail, assignmentNotice } = require('../mailer');
 const { upload, checkContents } = require('../uploads');
 const { toTask, toAttachment } = require('../serializers');
 
@@ -79,10 +79,15 @@ router.patch('/:id', async (req, res) => {
         applyChanges(client, 'task', id, changes, req.user),
     );
     const task = await loadTaskDetail(id);
-    res.send(task);
+    const reassigned = changed.some((c) => c.field === 'owner_id');
+    res.send({
+        ...task,
+        ...(reassigned && {
+            assignmentEmail: await assignmentNotice(task.owner.id, req.user),
+        }),
+    });
 
-    if (changed.some((c) => c.field === 'owner_id'))
-        sendAssignmentEmail(task.owner.id, [task], req.user);
+    if (reassigned) sendAssignmentEmail(task.owner.id, [task], req.user);
 });
 
 router.post('/:id/attachments', upload, async (req, res) => {
@@ -119,7 +124,7 @@ router.post('/:id/attachments', upload, async (req, res) => {
         if (rows[0].state === 'done' && !req.user.isSuper)
             throw new HttpError(
                 403,
-                'This form is already uploaded. Only the super user can replace it.',
+                'This form is already uploaded. Only an admin can replace it.',
             );
 
         for (const file of files) {

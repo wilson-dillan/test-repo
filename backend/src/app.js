@@ -18,6 +18,7 @@ function createApp() {
     app.use('/api/activity', requireUser, require('./routes/activity'));
     app.use('/api/stats', requireUser, require('./routes/stats'));
     app.use('/api/housecall', requireUser, require('./routes/housecall'));
+    app.use('/api/reports', requireUser, require('./routes/reports'));
     app.use('/api', () => {
         throw new HttpError(404, 'Not found.');
     });

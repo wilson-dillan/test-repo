@@ -14,6 +14,7 @@ import {
     faHouseChimneyWindow,
     faLink,
 } from '@fortawesome/free-solid-svg-icons';
+import { useToast } from '../toastContext';
 import { api } from '../api';
 import { useAuth, useLoad } from '../hooks';
 import { formatDate } from '../format';
@@ -98,6 +99,7 @@ export function AddProjectPage() {
 function Wizard({ types, users, housecall, options }) {
     const { user, notifyChange } = useAuth();
     const navigate = useNavigate();
+    const showToast = useToast();
     const [step, setStep] = useState(0);
     const [values, setValues] = useState({
         type: '',
@@ -167,6 +169,7 @@ function Wizard({ types, users, housecall, options }) {
                 dueDate: values.dueDate || null,
             });
             notifyChange();
+            showToast('Successfully created');
             navigate(`/projects/${project.id}`);
         } catch (err) {
             setError(err.message);

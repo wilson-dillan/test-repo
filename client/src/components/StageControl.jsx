@@ -17,7 +17,7 @@ import { ConfirmModal } from './ConfirmModal';
 import { ProjectStatusPill } from './ui';
 
 // The application's stage and the one action that moves it forward:
-// To Do / In Progress -> "Mark as submitted" -> "I received rebate" -> Done.
+// To Do / In Progress -> "Mark as submitted" -> "Rebate Received" -> Done.
 export function StageControl({ project, onChanged }) {
     const { user, notifyChange } = useAuth();
     const [dialog, setDialog] = useState(null);
@@ -58,7 +58,7 @@ export function StageControl({ project, onChanged }) {
                         onClick={() => setDialog('rebate')}
                     >
                         <FontAwesomeIcon icon={faSackDollar} className="me-2" />
-                        I received rebate
+                        Rebate Received
                     </Button>
                     <div className="stage-hint">
                         Marks the application as Done
@@ -66,16 +66,14 @@ export function StageControl({ project, onChanged }) {
                 </div>
             )}
 
-            {project.active && project.state !== 'todo' && user.isSuper && (
+            {project.active && project.state === 'done' && user.isSuper && (
                 <Button
                     variant="outline-secondary"
                     size="sm"
                     onClick={() => setDialog('reopen')}
                 >
                     <FontAwesomeIcon icon={faRotateLeft} className="me-1" />
-                    {project.state === 'done'
-                        ? 'Back to Submitted'
-                        : 'Back to To Do'}
+                    Back to Submitted
                 </Button>
             )}
 
@@ -88,8 +86,8 @@ export function StageControl({ project, onChanged }) {
                 title="Mark this application as submitted?"
                 confirmLabel="Yes, it's submitted"
             >
-                Do this once the application has been sent to Mass Save. Only
-                the super user can undo it.
+                Do this once the application has been sent to Mass Save. This
+                can&apos;t be undone.
             </ConfirmModal>
 
             <ConfirmModal
@@ -98,16 +96,10 @@ export function StageControl({ project, onChanged }) {
                 onConfirm={() => act('reopen')}
                 icon={faRotateLeft}
                 tone="success"
-                title={
-                    project.state === 'done'
-                        ? 'Move back to Submitted?'
-                        : 'Move back to To Do?'
-                }
+                title="Move back to Submitted?"
                 confirmLabel="Move back"
             >
-                {project.state === 'done'
-                    ? 'This clears the rebate details. It is recorded in the history.'
-                    : 'It is recorded in the history.'}
+                This clears the rebate details. It is recorded in the history.
             </ConfirmModal>
 
             <RebateModal
@@ -199,7 +191,7 @@ function RebateModal({ show, project, onHide, onDone }) {
             {step === 'enter' ? (
                 <Form onSubmit={review}>
                     <Modal.Header closeButton>
-                        <Modal.Title>I received rebate</Modal.Title>
+                        <Modal.Title>Rebate Received</Modal.Title>
                     </Modal.Header>
                     <Modal.Body>
                         <p className="text-muted">
@@ -280,8 +272,7 @@ function RebateModal({ show, project, onHide, onDone }) {
                         <Alert variant="success" className="mb-0">
                             This marks the application as{' '}
                             <strong>Done (Rebate received)</strong>. It
-                            can&apos;t be undone; only the super user can reopen
-                            it.
+                            can&apos;t be undone; only an admin can reopen it.
                         </Alert>
                         {duplicate && (
                             <Alert variant="warning" className="mt-3 mb-0">

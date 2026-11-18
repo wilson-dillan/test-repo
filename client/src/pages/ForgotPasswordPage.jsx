@@ -40,8 +40,8 @@ export function ForgotPasswordPage() {
                     <Alert variant="success">{sent}</Alert>
                     <p className="text-muted small">
                         Check your inbox and spam folder. No email? Your account
-                        may not have an email address. Your super user has been
-                        told about the request and can help.
+                        may not have an email address. Your admin has been told
+                        about the request and can help.
                     </p>
                 </>
             ) : (

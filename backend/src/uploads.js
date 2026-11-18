@@ -128,8 +128,30 @@ const upload = multer({
     },
 }).array('files', MAX_FILES);
 
+// One optional screenshot with a problem report.
+const SCREENSHOT_TYPES = new Set([
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/webp',
+]);
+const MAX_SCREENSHOT_SIZE = 10 * 1024 * 1024;
+const uploadScreenshot = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: MAX_SCREENSHOT_SIZE, files: 1 },
+    fileFilter: (req, file, cb) => {
+        if (SCREENSHOT_TYPES.has(typeOf(file)?.mime)) return cb(null, true);
+        cb(
+            new UploadError(
+                'The screenshot must be a PNG, JPEG, GIF or WebP image.',
+            ),
+        );
+    },
+}).single('screenshot');
+
 const MULTER_MESSAGES = {
     LIMIT_FILE_SIZE: 'Each file must be 20 MB or smaller.',
+    LIMIT_SCREENSHOT_SIZE: 'The screenshot must be 10 MB or smaller.',
     LIMIT_FILE_COUNT: `You can attach at most ${MAX_FILES} files.`,
     LIMIT_UNEXPECTED_FILE: `You can attach at most ${MAX_FILES} files.`,
 };
@@ -139,15 +161,20 @@ function uploadErrorHandler(err, req, res, next) {
         return res.status(400).send({ error: err.message });
     }
     if (err instanceof multer.MulterError) {
+        const code =
+            err.code === 'LIMIT_FILE_SIZE' && err.field === 'screenshot'
+                ? 'LIMIT_SCREENSHOT_SIZE'
+                : err.code;
         return res
             .status(400)
-            .send({ error: MULTER_MESSAGES[err.code] || err.message });
+            .send({ error: MULTER_MESSAGES[code] || err.message });
     }
     next(err);
 }
 
 module.exports = {
     upload,
+    uploadScreenshot,
     uploadErrorHandler,
     checkContents,
     UploadError,
