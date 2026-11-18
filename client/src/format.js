@@ -65,10 +65,40 @@ export function initials(name = '') {
     ).toUpperCase();
 }
 
-export const STATE_LABELS = { todo: 'To Do', done: 'Done' };
+const money = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+});
+
+export function formatMoney(value) {
+    return money.format(value);
+}
+
+// Stages of an application (a project), as opposed to a single document.
+export const PROJECT_STATUS_LABELS = {
+    todo: 'To Do',
+    in_progress: 'In Progress',
+    submitted: 'Submitted',
+    done: 'Done (Rebate received)',
+};
+
+export const STATE_LABELS = {
+    todo: 'To Do',
+    in_progress: 'In Progress',
+    done: 'Done',
+};
 
 const FIELD_LABELS = {
     customer_name: 'customer name',
+    customer_first_name: 'first name',
+    customer_last_name: 'last name',
+    financing: 'financing',
+    financing_provider: 'financing provider',
+    financing_other: 'financing provider name',
+    heats_with_gas: 'natural gas heating',
+    integrated_controls: 'integrated controls',
+    controls_type: 'controls type',
+    controls_other: 'controls name',
     address: 'address',
     due_date: 'due date',
     owner_id: 'owner',
@@ -81,6 +111,8 @@ function displayValue(field, value) {
     if (value === null || value === '') return 'nothing';
     if (field === 'state') return STATE_LABELS[value] || value;
     if (field === 'active') return value === 'true' ? 'Active' : 'Inactive';
+    if (value === 'true') return 'Yes';
+    if (value === 'false') return 'No';
     if (field === 'due_date') return formatDate(value);
     return value;
 }
@@ -100,15 +132,33 @@ export function describeHistory(entry, withTarget = true) {
             ? { verb: 'created', detail: newValue }
             : { verb: 'created this project', detail: newValue };
     if (action === 'file') return { verb: on(`uploaded ${newValue}`, 'to') };
+    if (action === 'rebate') {
+        const r = JSON.parse(newValue || '{}');
+        return {
+            verb: 'recorded the rebate',
+            detail: `#${r.number} · ${formatMoney(r.amount)} · received ${formatDate(r.receivedOn)}`,
+        };
+    }
+    if (action === 'reopen')
+        return {
+            verb: 'moved the application back',
+            detail: `to ${PROJECT_STATUS_LABELS[newValue]}`,
+        };
     if (action === 'undo')
         return {
             verb: on(`undid the ${label} change`, 'on'),
             detail: `back to ${displayValue(field, newValue)}`,
         };
+    if (field === 'active' && entry.taskId)
+        return newValue === 'false'
+            ? { verb: 'marked', suffix: 'as not needed' }
+            : { verb: 'marked', suffix: 'as needed again' };
     if (field === 'active')
         return newValue === 'false'
             ? { verb: 'marked', suffix: 'as inactive' }
             : { verb: 'reactivated' };
+    if (field === 'state' && newValue === 'submitted')
+        return { verb: 'marked', suffix: 'as submitted' };
     if (field === 'state')
         return newValue === 'done'
             ? { verb: 'marked', suffix: 'as done' }
@@ -128,5 +178,5 @@ export function describeHistory(entry, withTarget = true) {
 // "Manual J Calculation" -> "Manual J Calculation form", but leave names
 // that already say what they are ("Completed Customer Form").
 export function formLabel(name) {
-    return /\b(form|document)$/i.test(name) ? name : `${name} form`;
+    return /\b(form|document|bill)$/i.test(name) ? name : `${name} form`;
 }

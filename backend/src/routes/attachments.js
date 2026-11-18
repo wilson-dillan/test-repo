@@ -1,5 +1,6 @@
 const express = require('express');
 const db = require('../db');
+const { VIEWABLE } = require('../uploads');
 
 const router = express.Router();
 
@@ -15,7 +16,12 @@ router.get('/:id', async (req, res) => {
     const attachment = rows[0];
     if (!attachment) return res.sendStatus(404);
 
-    const disposition = req.query.download ? 'attachment' : 'inline';
+    // PDFs, common images and text open in the browser; other files
+    // (e.g. Word, Excel, HEIC) download.
+    const disposition =
+        req.query.download || !VIEWABLE.has(attachment.mime_type)
+            ? 'attachment'
+            : 'inline';
     res.set({
         'Content-Type': attachment.mime_type,
         'Content-Disposition': `${disposition}; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`,

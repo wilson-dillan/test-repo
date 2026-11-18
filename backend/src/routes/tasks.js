@@ -2,9 +2,14 @@ const express = require('express');
 const { v4: uuid } = require('uuid');
 const db = require('../db');
 const { HttpError } = require('../errors');
-const { applyChanges, record, listHistory } = require('../history');
+const {
+    applyChanges,
+    record,
+    listHistory,
+    assertProjectEditable,
+} = require('../history');
 const { sendAssignmentEmail } = require('../mailer');
-const { upload, hasValidContents } = require('../uploads');
+const { upload, checkContents } = require('../uploads');
 const { toTask, toAttachment } = require('../serializers');
 
 const router = express.Router();
@@ -51,7 +56,7 @@ router.get('/', async (req, res) => {
     const ownerId = req.query.owner === 'me' ? req.user.id : null;
     const { rows } = await db.query(
         `${TASK_QUERY}
-         WHERE ($1::integer IS NULL OR t.owner_id = $1)
+         WHERE t.active AND ($1::integer IS NULL OR t.owner_id = $1)
          ORDER BY t.state = 'done', NOT p.active, p.due_date NULLS LAST, t.project_id, t.letter`,
         [ownerId],
     );
@@ -85,22 +90,32 @@ router.post('/:id/attachments', upload, async (req, res) => {
     const files = req.files || [];
     if (!files.length) throw new HttpError(400, 'Choose at least one file.');
 
-    const invalid = files.find((file) => !hasValidContents(file));
-    if (invalid)
-        throw new HttpError(
-            400,
-            `"${invalid.originalname}" doesn't look like a real PDF or JPEG file.`,
-        );
+    // Store each file as the type its extension and contents agree on.
+    for (const file of files) {
+        const mime = checkContents(file);
+        if (!mime)
+            throw new HttpError(
+                400,
+                `"${file.originalname}" doesn't match its file type. It may be damaged or renamed.`,
+            );
+        file.mimetype = mime;
+    }
 
     // Uploading a task's form completes the task, and the last form
     // completes the project. Once done, only the super user can upload a
     // replacement.
     await db.transaction(async (client) => {
         const { rows } = await client.query(
-            'SELECT project_id, state FROM tasks WHERE id = $1 FOR UPDATE',
+            'SELECT project_id, state, active FROM tasks WHERE id = $1 FOR UPDATE',
             [id],
         );
         if (!rows[0]) throw new HttpError(404, 'Task not found.');
+        if (!rows[0].active)
+            throw new HttpError(
+                400,
+                "This document isn't needed for this project.",
+            );
+        await assertProjectEditable(client, rows[0].project_id);
         if (rows[0].state === 'done' && !req.user.isSuper)
             throw new HttpError(
                 403,
@@ -130,24 +145,8 @@ router.post('/:id/attachments', upload, async (req, res) => {
             });
         }
 
-        const projectId = rows[0].project_id;
         if (rows[0].state === 'todo')
             await applyChanges(client, 'task', id, { state: 'done' }, req.user);
-
-        const { rows: remaining } = await client.query(
-            `SELECT count(*) FILTER (WHERE t.state = 'todo') AS open, p.state
-             FROM tasks t JOIN projects p ON p.id = t.project_id
-             WHERE t.project_id = $1 GROUP BY p.state`,
-            [projectId],
-        );
-        if (remaining[0].state === 'todo' && Number(remaining[0].open) === 0)
-            await applyChanges(
-                client,
-                'project',
-                projectId,
-                { state: 'done' },
-                req.user,
-            );
     });
 
     res.status(201).send(await loadTaskDetail(id));

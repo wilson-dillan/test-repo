@@ -7,9 +7,15 @@ import Col from 'react-bootstrap/Col';
 import Form from 'react-bootstrap/Form';
 import ProgressBar from 'react-bootstrap/ProgressBar';
 import Row from 'react-bootstrap/Row';
-import { faFolderOpen } from '@fortawesome/free-solid-svg-icons';
+import {
+    faClockRotateLeft,
+    faFolderOpen,
+} from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { api } from '../api';
 import { useLoad } from '../hooks';
+import { ActivityDrawer } from '../components/ActivityDrawer';
+import { HistoryTimeline } from '../components/HistoryTimeline';
 import {
     DonutChart,
     TasksPerUserChart,
@@ -22,7 +28,7 @@ import {
     LoadError,
     Owner,
     PageLoader,
-    StatePill,
+    ProjectStatusPill,
 } from '../components/ui';
 
 export function DashboardPage() {
@@ -57,7 +63,7 @@ function DashboardContent({ stats, projects }) {
             sub: `${stats.projects.inactive} inactive · ${stats.projects.total} total`,
         },
         {
-            label: 'Projects done',
+            label: 'Rebates received',
             value: stats.projects.done,
             sub: `${weekTotal} in the last 12 weeks`,
         },
@@ -111,13 +117,24 @@ function DashboardContent({ stats, projects }) {
                 </Col>
             </Row>
 
-            <section className="panel mb-4">
-                <div className="panel-title">
-                    <h2>Projects Completed by Week</h2>
-                    <span className="text-muted small">Last 12 weeks</span>
-                </div>
-                <WeeklyCompletionsChart weeks={stats.projectsCompletedByWeek} />
-            </section>
+            <Row className="g-4 mb-4">
+                <Col lg={7}>
+                    <section className="panel h-100">
+                        <div className="panel-title">
+                            <h2>Projects Completed by Week</h2>
+                            <span className="text-muted small">
+                                Last 12 weeks
+                            </span>
+                        </div>
+                        <WeeklyCompletionsChart
+                            weeks={stats.projectsCompletedByWeek}
+                        />
+                    </section>
+                </Col>
+                <Col lg={5}>
+                    <RecentActivity />
+                </Col>
+            </Row>
 
             <AllProjects projects={projects} />
         </>
@@ -132,13 +149,15 @@ DashboardContent.propTypes = {
 function AllProjects({ projects }) {
     const navigate = useNavigate();
     const [search, setSearch] = useState('');
-    const [state, setState] = useState('todo');
+    const [state, setState] = useState('open');
 
     const shown = useMemo(() => {
         const q = search.trim().toLowerCase();
         return projects.filter(
             (p) =>
-                (state === 'all' || p.state === state) &&
+                (state === 'all' ||
+                    p.status === state ||
+                    (state === 'open' && p.status !== 'done')) &&
                 (!q ||
                     String(p.id) === q.replace('#', '') ||
                     p.customerName.toLowerCase().includes(q) ||
@@ -165,7 +184,10 @@ function AllProjects({ projects }) {
                     />
                     <ButtonGroup size="sm">
                         {[
+                            ['open', 'Open'],
                             ['todo', 'To Do'],
+                            ['in_progress', 'In Progress'],
+                            ['submitted', 'Submitted'],
                             ['done', 'Done'],
                             ['all', 'All'],
                         ].map(([value, label]) => (
@@ -249,7 +271,9 @@ function AllProjects({ projects }) {
                                     </td>
                                     <td>
                                         <span className="d-flex flex-column align-items-start gap-1">
-                                            <StatePill state={p.state} />
+                                            <ProjectStatusPill
+                                                status={p.status}
+                                            />
                                             {!p.active && <InactiveBadge />}
                                         </span>
                                     </td>
@@ -266,3 +290,38 @@ function AllProjects({ projects }) {
 }
 
 AllProjects.propTypes = { projects: PropTypes.array.isRequired };
+
+// The latest changes across every project, with the full list a click away.
+function RecentActivity() {
+    const [showAll, setShowAll] = useState(false);
+    const { data, error, reload } = useLoad(() =>
+        api.get('/activity?limit=12'),
+    );
+    return (
+        <section className="panel h-100 recent-activity">
+            <div className="panel-title">
+                <h2>
+                    <FontAwesomeIcon
+                        icon={faClockRotateLeft}
+                        className="me-2 text-primary"
+                    />
+                    Recent activity
+                </h2>
+                <Button
+                    variant="link"
+                    size="sm"
+                    className="p-0"
+                    onClick={() => setShowAll(true)}
+                >
+                    See all
+                </Button>
+            </div>
+            {error && <LoadError error={error} onRetry={reload} />}
+            {!data && !error && <PageLoader />}
+            {data && (
+                <HistoryTimeline entries={data} showTarget linkTarget scroll />
+            )}
+            <ActivityDrawer show={showAll} onHide={() => setShowAll(false)} />
+        </section>
+    );
+}

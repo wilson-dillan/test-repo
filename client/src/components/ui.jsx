@@ -4,13 +4,33 @@ import Alert from 'react-bootstrap/Alert';
 import Spinner from 'react-bootstrap/Spinner';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowLeft, faCalendarDays } from '@fortawesome/free-solid-svg-icons';
-import { STATE_LABELS, dueStatus, formatDate, initials } from '../format';
+import {
+    PROJECT_STATUS_LABELS,
+    STATE_LABELS,
+    dueStatus,
+    formatDate,
+    initials,
+} from '../format';
 
 export function InactiveBadge({ label = 'Inactive' }) {
     return <span className="inactive-badge">{label}</span>;
 }
 
 InactiveBadge.propTypes = { label: PropTypes.string };
+
+// The stage of an application: To Do / In Progress / Submitted / Done.
+export function ProjectStatusPill({ status }) {
+    return (
+        <span className={`state-pill ${status}`}>
+            <span className="dot" />
+            {PROJECT_STATUS_LABELS[status]}
+        </span>
+    );
+}
+
+ProjectStatusPill.propTypes = {
+    status: PropTypes.oneOf(['todo', 'in_progress', 'submitted', 'done']),
+};
 
 export function StatePill({ state }) {
     return (
@@ -21,7 +41,9 @@ export function StatePill({ state }) {
     );
 }
 
-StatePill.propTypes = { state: PropTypes.oneOf(['todo', 'done']) };
+StatePill.propTypes = {
+    state: PropTypes.oneOf(['todo', 'in_progress', 'done']),
+};
 
 export function Avatar({ name, size }) {
     return (
@@ -49,7 +71,7 @@ export function DueDate({ date, state, prefix }) {
     return (
         <span className={`due ${status || ''}`}>
             <FontAwesomeIcon icon={faCalendarDays} />
-            {prefix}
+            {date && prefix}
             {formatDate(date)}
             {status === 'overdue' && ' · Overdue'}
         </span>

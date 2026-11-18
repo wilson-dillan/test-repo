@@ -8,6 +8,8 @@ import {
     faClockRotateLeft,
     faFolderOpen,
     faPaperclip,
+    faPaperPlane,
+    faSackDollar,
     faPenToSquare,
     faRotateLeft,
     faUser,
@@ -23,11 +25,19 @@ function iconFor(entry) {
     if (entry.action === 'created') return [faFolderOpen, ''];
     if (entry.action === 'file') return [faPaperclip, ''];
     if (entry.action === 'undo') return [faRotateLeft, 'undo'];
+    if (entry.action === 'rebate') return [faSackDollar, 'done'];
+    if (entry.action === 'reopen') return [faRotateLeft, 'undo'];
+    if (entry.field === 'state' && entry.newValue === 'submitted')
+        return [faPaperPlane, ''];
     if (entry.field === 'state')
         return entry.newValue === 'done'
             ? [faCheck, 'done']
             : [faRotateLeft, 'undo'];
     if (entry.field === 'owner_id') return [faUser, ''];
+    if (entry.field === 'active' && entry.taskId)
+        return entry.newValue === 'false'
+            ? [faBoxArchive, 'inactive']
+            : [faCheck, ''];
     if (entry.field === 'active')
         return entry.newValue === 'false'
             ? [faBoxArchive, 'inactive']

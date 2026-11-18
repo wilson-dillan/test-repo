@@ -7,50 +7,21 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
     faArrowUpRightFromSquare,
     faCheck,
-    faFileArrowUp,
-    faUpload,
+    faDownload,
+    faChevronRight,
+    faCloudArrowUp,
 } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../api';
 import { useAuth } from '../hooks';
-import { formLabel, formatDateTime } from '../format';
-import { ConfirmModal } from './ConfirmModal';
-import { ACCEPT_ATTRIBUTE, checkFiles, uploadForm } from './files';
-
-// Asks "Is this the <form> form?" before an upload, since uploading
-// completes the task and can't be undone.
-export function ConfirmFormUpload({ task, files, onHide, onConfirm }) {
-    return (
-        <ConfirmModal
-            show={files.length > 0}
-            onHide={onHide}
-            onConfirm={onConfirm}
-            icon={faFileArrowUp}
-            tone="success"
-            title={`Is this the ${formLabel(task.name)}?`}
-            confirmLabel="Yes, upload it"
-            confirmVariant="success"
-        >
-            <div className="mb-2 fw-semibold text-body">
-                {files.map((f) => f.name).join(', ')}
-            </div>
-            {task.state === 'done'
-                ? 'This adds a new version of the document.'
-                : "This completes the task and can't be undone."}
-        </ConfirmModal>
-    );
-}
-
-ConfirmFormUpload.propTypes = {
-    task: PropTypes.object.isRequired,
-    files: PropTypes.array.isRequired,
-    onHide: PropTypes.func.isRequired,
-    onConfirm: PropTypes.func.isRequired,
-};
+import { formatDateTime } from '../format';
+import { ACCEPT_ATTRIBUTE, checkFiles, isViewable, uploadForm } from './files';
+import { UploadConfirm } from './UploadConfirm';
 
 // One form the project needs: who it's assigned to, and either an Upload
 // button or a link to view the uploaded document. Files can also be
 // dropped onto the row.
-export function FormRow({ task, users, onChanged }) {
+// `readOnly` (inactive applications) shows the row without any actions.
+export function FormRow({ task, users, onChanged, readOnly }) {
     const { user, notifyChange } = useAuth();
     const input = useRef(null);
     const [pending, setPending] = useState([]);
@@ -59,9 +30,11 @@ export function FormRow({ task, users, onChanged }) {
     const [error, setError] = useState(null);
 
     const done = task.state === 'done';
-    const canUpload = !done || user.isSuper;
+    const canUpload = !readOnly && (!done || user.isSuper);
     const doc = task.latestDocument;
 
+    // A chosen file is shown in a "Is this the right document?" popup
+    // before it's uploaded, since uploading completes the task.
     const choose = (fileList) => {
         const { accepted, error } = checkFiles([...fileList].slice(0, 1));
         setError(error);
@@ -70,6 +43,7 @@ export function FormRow({ task, users, onChanged }) {
 
     const upload = async () => {
         await uploadForm(task, pending);
+        setPending([]);
         setError(null);
         onChanged();
         notifyChange();
@@ -110,25 +84,39 @@ export function FormRow({ task, users, onChanged }) {
         },
     };
 
+    if (!task.active)
+        return (
+            <div className="form-row not-needed">
+                <div className="form-main">
+                    <Link to={`/tasks/${task.id}`} className="form-name">
+                        {task.name}
+                    </Link>
+                    <div className="form-sub">
+                        Not needed:{' '}
+                        {/gas/i.test(task.name)
+                            ? "the home doesn't heat with natural gas"
+                            : 'not required for this project'}
+                    </div>
+                </div>
+            </div>
+        );
+
     return (
         <div
             className={`form-row ${done ? 'is-done' : ''} ${dragging ? 'dragging' : ''}`}
             {...dropHandlers}
         >
             <div className="form-main">
-                <Link to={`/tasks/${task.id}`} className="form-name">
+                <Link
+                    to={`/tasks/${task.id}`}
+                    className="form-name"
+                    title="Open this task's details"
+                >
                     {task.name}
+                    <FontAwesomeIcon icon={faChevronRight} className="chev" />
                 </Link>
                 <div className="form-sub">
-                    {!done && (
-                        <>
-                            Upload the form to complete the task
-                            <span className="drop-hint">
-                                {' '}
-                                · or drag &amp; drop the file here
-                            </span>
-                        </>
-                    )}
+                    {!done && 'Upload the form to complete the task'}
                     {done && (
                         <>
                             <FontAwesomeIcon icon={faCheck} className="me-1" />
@@ -147,7 +135,7 @@ export function FormRow({ task, users, onChanged }) {
                     size="sm"
                     value={task.owner.id}
                     onChange={reassign}
-                    disabled={savingOwner}
+                    disabled={savingOwner || readOnly}
                 >
                     {ownerOptions.map((u) => (
                         <option key={u.id} value={u.id}>
@@ -166,19 +154,35 @@ export function FormRow({ task, users, onChanged }) {
                         className="btn btn-outline-primary btn-sm"
                     >
                         <FontAwesomeIcon
-                            icon={faArrowUpRightFromSquare}
+                            icon={
+                                isViewable(doc.filename)
+                                    ? faArrowUpRightFromSquare
+                                    : faDownload
+                            }
                             className="me-2"
                         />
-                        View document
+                        {isViewable(doc.filename)
+                            ? 'View document'
+                            : 'Download document'}
                     </a>
                 )}
-                {!done && (
-                    <Button size="sm" onClick={() => input.current.click()}>
-                        <FontAwesomeIcon icon={faUpload} className="me-2" />
-                        Upload
-                    </Button>
+                {!done && !readOnly && (
+                    <button
+                        type="button"
+                        className="row-drop"
+                        onClick={() => input.current.click()}
+                    >
+                        <FontAwesomeIcon
+                            icon={faCloudArrowUp}
+                            className="icon"
+                        />
+                        <span>
+                            <strong>Drop file here</strong>
+                            <span className="sub">or click to upload</span>
+                        </span>
+                    </button>
                 )}
-                {done && user.isSuper && (
+                {done && user.isSuper && !readOnly && (
                     <Button
                         size="sm"
                         variant="link"
@@ -199,10 +203,10 @@ export function FormRow({ task, users, onChanged }) {
                 />
             </div>
 
-            <ConfirmFormUpload
+            <UploadConfirm
                 task={task}
                 files={pending}
-                onHide={() => setPending([])}
+                onCancel={() => setPending([])}
                 onConfirm={upload}
             />
         </div>
@@ -213,4 +217,5 @@ FormRow.propTypes = {
     task: PropTypes.object.isRequired,
     users: PropTypes.array.isRequired,
     onChanged: PropTypes.func.isRequired,
+    readOnly: PropTypes.bool,
 };

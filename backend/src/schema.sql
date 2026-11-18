@@ -18,7 +18,12 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS projects (
     id serial PRIMARY KEY,
     type text NOT NULL,
-    customer_name text NOT NULL,
+    customer_first_name text NOT NULL,
+    customer_last_name text NOT NULL DEFAULT '',
+    -- Kept in sync automatically, for display and search.
+    customer_name text GENERATED ALWAYS AS (
+        btrim(customer_first_name || ' ' || customer_last_name)
+    ) STORED,
     address text NOT NULL,
     due_date date,
     owner_id integer NOT NULL REFERENCES users (id),
@@ -97,6 +102,60 @@ CREATE TABLE IF NOT EXISTS password_tokens (
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS active boolean NOT NULL DEFAULT true;
 -- Invited users have no password until they choose one.
 ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
+-- Split the original single customer name into first and last name
+-- (at the first space). Runs once, on databases from before the split.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'projects' AND column_name = 'customer_first_name'
+    ) THEN
+        ALTER TABLE projects
+            ADD COLUMN customer_first_name text,
+            ADD COLUMN customer_last_name text NOT NULL DEFAULT '';
+        UPDATE projects SET
+            customer_first_name = split_part(btrim(customer_name), ' ', 1),
+            customer_last_name = btrim(substr(
+                btrim(customer_name),
+                length(split_part(btrim(customer_name), ' ', 1)) + 1
+            ));
+        ALTER TABLE projects ALTER COLUMN customer_first_name SET NOT NULL;
+        ALTER TABLE projects DROP COLUMN customer_name;
+        ALTER TABLE projects ADD COLUMN customer_name text GENERATED ALWAYS AS (
+            btrim(customer_first_name || ' ' || customer_last_name)
+        ) STORED;
+    END IF;
+END $$;
+-- Answers asked when a project is created (see projectTypes.js).
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS financing boolean NOT NULL DEFAULT false;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS financing_provider text;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS financing_other text NOT NULL DEFAULT '';
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS heats_with_gas boolean;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS integrated_controls boolean;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS controls_type text;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS controls_other text NOT NULL DEFAULT '';
+-- A task that isn't needed for this project (e.g. the natural gas bill
+-- when the home doesn't heat with gas). Still listed, never required.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS active boolean NOT NULL DEFAULT true;
+
+-- Application stages: todo (documents still coming in) -> submitted (sent
+-- to Mass Save) -> done (rebate received). In Progress is worked out from
+-- the uploads, not stored.
+ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_state_check;
+ALTER TABLE projects ADD CONSTRAINT projects_state_check
+    CHECK (state IN ('todo', 'submitted', 'done'));
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS submitted_at timestamptz;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS rebate_number text;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS rebate_amount numeric(12, 2);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS rebate_received_on date;
+
+-- One-time data changes that have already run (see migrations.js).
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    name text PRIMARY KEY,
+    ran_at timestamptz NOT NULL DEFAULT now()
+);
+-- The Housecall Pro customer a project was created from, if any.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS housecall_customer_id text;
 -- Notes and history keep their place after their author is deleted.
 ALTER TABLE project_notes ALTER COLUMN author_id DROP NOT NULL;
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { Link, useParams } from 'react-router-dom';
 import Alert from 'react-bootstrap/Alert';
@@ -9,15 +9,19 @@ import {
     faDownload,
     faLock,
     faPaperclip,
-    faUpload,
+    faCloudArrowUp,
 } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../api';
 import { useAuth, useLoad } from '../hooks';
 import { formLabel, formatDateTime, timeAgo } from '../format';
 import { AttachmentIcon } from '../components/AttachmentIcon';
-import { FileDropZone } from '../components/FileDropZone';
-import { formatFileSize, uploadForm } from '../components/files';
-import { ConfirmFormUpload } from '../components/FormRow';
+import {
+    ACCEPT_ATTRIBUTE,
+    checkFiles,
+    formatFileSize,
+    uploadForm,
+} from '../components/files';
+import { UploadConfirm } from '../components/UploadConfirm';
 import { HistoryTimeline } from '../components/HistoryTimeline';
 import { StateControl } from '../components/StateControl';
 import {
@@ -51,10 +55,14 @@ function TaskDetail({ task, users, onUpdate }) {
         notifyChange();
     };
 
+    // Tasks of an inactive application are read-only.
+    const locked = task.projectActive === false;
+    const uploading = !locked && task.state === 'todo' && task.active;
+    const hasFiles = task.attachments.length > 0;
     const files = (
-        <div className="detail-grid">
-            <AddFiles task={task} onUploaded={onUpdate} />
-            <CurrentFiles attachments={task.attachments} />
+        <div className={hasFiles ? 'detail-grid' : ''}>
+            {!locked && <AddFiles task={task} onUploaded={onUpdate} />}
+            {hasFiles && <CurrentFiles attachments={task.attachments} />}
         </div>
     );
 
@@ -68,39 +76,34 @@ function TaskDetail({ task, users, onUpdate }) {
                     </div>
                     <h1>{task.name}</h1>
                 </div>
-                <StateControl
-                    state={task.state}
-                    what="task"
-                    onChange={(state) => update({ state })}
-                    doneHint="Completes when the form is uploaded"
-                />
+                {!locked && (
+                    <StateControl
+                        state={task.state}
+                        what="task"
+                        onChange={(state) => update({ state })}
+                        autoComplete
+                    />
+                )}
             </div>
+
+            {!task.active && (
+                <div className="inactive-banner mb-4">
+                    <InactiveBadge label="Not needed" />
+                    {/gas/i.test(task.name)
+                        ? "This document isn't needed because the home doesn't heat with natural gas. It comes back automatically if that answer changes."
+                        : "This document isn't needed for this project."}
+                </div>
+            )}
 
             {task.projectActive === false && (
                 <div className="inactive-banner mb-4">
                     <InactiveBadge label="Inactive project" />
-                    This task belongs to an inactive project.
+                    This task belongs to an inactive application, so it
+                    can&apos;t be edited.
                 </div>
             )}
 
-            {task.state === 'todo' && (
-                <>
-                    <div className="next-step mb-4">
-                        <FontAwesomeIcon icon={faUpload} className="icon" />
-                        <div>
-                            <strong>
-                                Upload the {formLabel(task.name)} to complete
-                                this task.
-                            </strong>
-                            <div>
-                                Drag and drop the file into the box below, or
-                                click it to choose a file.
-                            </div>
-                        </div>
-                    </div>
-                    <div className="mb-4">{files}</div>
-                </>
-            )}
+            {uploading && <div className="mb-4">{files}</div>}
 
             <div className="detail-grid mb-4">
                 <div>
@@ -113,15 +116,13 @@ function TaskDetail({ task, users, onUpdate }) {
                             task={task}
                             users={users}
                             onSave={update}
+                            readOnly={locked}
                         >
                             <div className="field-list mb-3">
                                 <ReadField label="Project">
                                     <Link to={`/projects/${task.projectId}`}>
                                         #{task.projectId} · {task.customerName}
                                     </Link>
-                                </ReadField>
-                                <ReadField label="Customer Name">
-                                    {task.customerName}
                                 </ReadField>
                                 <ReadField label="Address">
                                     {task.address}
@@ -136,15 +137,16 @@ function TaskDetail({ task, users, onUpdate }) {
                         </TaskForm>
                     </section>
                 </div>
-                <section className="panel">
+                <section className="panel history-panel">
                     <div className="panel-title">
                         <h2>History</h2>
+                        <span className="text-muted small">Newest first</span>
                     </div>
                     <HistoryTimeline entries={task.history} scroll />
                 </section>
             </div>
 
-            {task.state === 'done' && files}
+            {!uploading && files}
         </>
     );
 }
@@ -157,7 +159,7 @@ TaskDetail.propTypes = {
 
 // Owner sits at the top, then `children` (the task's read-only facts),
 // then the notes.
-function TaskForm({ task, users, onSave, children }) {
+function TaskForm({ task, users, onSave, readOnly, children }) {
     const initial = { ownerId: String(task.owner.id), notes: task.notes };
     const [values, setValues] = useState(initial);
     const [saving, setSaving] = useState(false);
@@ -193,88 +195,96 @@ function TaskForm({ task, users, onSave, children }) {
 
     return (
         <Form onSubmit={save}>
-            <Form.Group className="mb-3" controlId="ownerId">
-                <Form.Label>Owner</Form.Label>
-                <Form.Select value={values.ownerId} onChange={set('ownerId')}>
-                    {ownerOptions.map((u) => (
-                        <option key={u.id} value={u.id}>
-                            {u.displayName}
-                        </option>
-                    ))}
-                </Form.Select>
-                {'ownerId' in changed && (
-                    <Form.Text>
-                        They&apos;ll get an email when you save.
-                    </Form.Text>
+            <fieldset disabled={readOnly}>
+                <Form.Group className="mb-3" controlId="ownerId">
+                    <Form.Label>Owner</Form.Label>
+                    <Form.Select
+                        value={values.ownerId}
+                        onChange={set('ownerId')}
+                    >
+                        {ownerOptions.map((u) => (
+                            <option key={u.id} value={u.id}>
+                                {u.displayName}
+                            </option>
+                        ))}
+                    </Form.Select>
+                    {'ownerId' in changed && (
+                        <Form.Text>
+                            They&apos;ll get an email when you save.
+                        </Form.Text>
+                    )}
+                </Form.Group>
+                {children}
+                <Form.Group controlId="notes">
+                    <Form.Label>Notes</Form.Label>
+                    <Form.Control
+                        as="textarea"
+                        rows={4}
+                        value={values.notes}
+                        onChange={set('notes')}
+                        maxLength={5000}
+                        placeholder="Notes about this task…"
+                    />
+                </Form.Group>
+                {error && (
+                    <Alert variant="danger" className="mt-3 mb-0">
+                        {error}
+                    </Alert>
                 )}
-            </Form.Group>
-            {children}
-            <Form.Group controlId="notes">
-                <Form.Label>Notes</Form.Label>
-                <Form.Control
-                    as="textarea"
-                    rows={4}
-                    value={values.notes}
-                    onChange={set('notes')}
-                    maxLength={5000}
-                    placeholder="Notes about this task…"
-                />
-            </Form.Group>
-            {error && (
-                <Alert variant="danger" className="mt-3 mb-0">
-                    {error}
-                </Alert>
-            )}
-            <div className="save-bar">
-                <span className="hint">
-                    {dirty ? 'You have unsaved changes.' : 'All changes saved.'}
-                </span>
-                <Button
-                    variant="light"
-                    disabled={!dirty || saving}
-                    onClick={() => setValues(initial)}
-                >
-                    Cancel
-                </Button>
-                <Button type="submit" disabled={!dirty || saving}>
-                    {saving ? 'Saving…' : 'Save'}
-                </Button>
-            </div>
+                <div className="save-bar">
+                    <span className="hint">{dirty && 'Unsaved changes'}</span>
+                    <Button
+                        variant="light"
+                        disabled={!dirty || saving}
+                        onClick={() => setValues(initial)}
+                    >
+                        Cancel
+                    </Button>
+                    <Button type="submit" disabled={!dirty || saving}>
+                        {saving ? 'Saving…' : 'Save'}
+                    </Button>
+                </div>
+            </fieldset>
         </Form>
     );
 }
 
 TaskForm.propTypes = {
     task: PropTypes.object.isRequired,
+    readOnly: PropTypes.bool,
     users: PropTypes.array.isRequired,
     onSave: PropTypes.func.isRequired,
     children: PropTypes.node,
 };
 
-// Upload area for the task's form. Uploading completes the task, so it
-// asks first; once done, only the super user can add a new version.
+// Upload area for the task's form: choosing or dropping files opens the
+// "Is this the right document?" popup. Once the task is done, only the
+// super user can add a new version.
 function AddFiles({ task, onUploaded }) {
     const { user, notifyChange } = useAuth();
-    const [files, setFiles] = useState([]);
-    const [confirming, setConfirming] = useState(false);
+    const input = useRef(null);
+    const [pending, setPending] = useState([]);
+    const [dragging, setDragging] = useState(false);
     const [error, setError] = useState(null);
 
     if (task.state === 'done' && !user.isSuper)
         return (
             <section className="panel">
-                <div className="panel-title">
-                    <h2>Upload the {formLabel(task.name)}</h2>
-                </div>
                 <EmptyState icon={faLock}>
-                    The form is uploaded and this task is done. Only the super
-                    user can replace it.
+                    Uploaded. Only the super user can replace it.
                 </EmptyState>
             </section>
         );
 
+    const choose = (fileList) => {
+        const { accepted, error } = checkFiles(fileList);
+        setError(error);
+        if (accepted.length) setPending(accepted);
+    };
+
     const upload = async () => {
-        onUploaded(await uploadForm(task, files));
-        setFiles([]);
+        onUploaded(await uploadForm(task, pending));
+        setPending([]);
         setError(null);
         notifyChange();
     };
@@ -284,26 +294,44 @@ function AddFiles({ task, onUploaded }) {
             <div className="panel-title">
                 <h2>Upload the {formLabel(task.name)}</h2>
             </div>
-            <FileDropZone
-                files={files}
-                onFilesChange={(next) => {
-                    setFiles(next);
-                    setError(null);
+            <button
+                type="button"
+                className={`task-drop ${dragging ? 'dragging' : ''}`}
+                onClick={() => input.current.click()}
+                onDragOver={(e) => {
+                    e.preventDefault();
+                    setDragging(true);
+                }}
+                onDragLeave={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget))
+                        setDragging(false);
+                }}
+                onDrop={(e) => {
+                    e.preventDefault();
+                    setDragging(false);
+                    choose(e.dataTransfer.files);
+                }}
+            >
+                <FontAwesomeIcon icon={faCloudArrowUp} className="icon" />
+                <strong>Drop files here or click to browse</strong>
+                <small>PDF, photo or Office file · max 20 MB</small>
+            </button>
+            <input
+                ref={input}
+                type="file"
+                multiple
+                hidden
+                accept={ACCEPT_ATTRIBUTE}
+                onChange={(e) => {
+                    choose(e.target.files);
+                    e.target.value = '';
                 }}
             />
-            {error && <Alert variant="danger">{error}</Alert>}
-            <Button
-                className="w-100"
-                onClick={() => setConfirming(true)}
-                disabled={!files.length}
-            >
-                <FontAwesomeIcon icon={faUpload} className="me-2" />
-                Upload
-            </Button>
-            <ConfirmFormUpload
+            {error && <div className="small text-danger mt-2">{error}</div>}
+            <UploadConfirm
                 task={task}
-                files={confirming ? files : []}
-                onHide={() => setConfirming(false)}
+                files={pending}
+                onCancel={() => setPending([])}
                 onConfirm={upload}
             />
         </section>

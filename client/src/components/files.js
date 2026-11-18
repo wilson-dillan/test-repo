@@ -1,12 +1,51 @@
 import { api } from '../api';
 
-export const ACCEPTED_TYPES = {
-    'application/pdf': ['.pdf'],
-    'image/jpeg': ['.jpg', '.jpeg'],
-};
-export const ACCEPT_ATTRIBUTE = '.pdf,.jpg,.jpeg,application/pdf,image/jpeg';
-export const MAX_FILE_SIZE = 10 * 1024 * 1024;
+// File types the server accepts (see backend/src/uploads.js).
+export const ACCEPTED_EXTENSIONS = [
+    '.pdf',
+    '.jpg',
+    '.jpeg',
+    '.png',
+    '.heic',
+    '.heif',
+    '.gif',
+    '.webp',
+    '.tif',
+    '.tiff',
+    '.doc',
+    '.docx',
+    '.xls',
+    '.xlsx',
+    '.ppt',
+    '.pptx',
+    '.txt',
+    '.csv',
+];
+export const ACCEPT_ATTRIBUTE = ACCEPTED_EXTENSIONS.join(',');
+export const ACCEPTED_DESCRIPTION =
+    'PDFs, photos, Word, Excel, PowerPoint, text and CSV files';
+export const MAX_FILE_SIZE = 20 * 1024 * 1024;
 export const MAX_FILES = 10;
+
+const VIEWABLE_EXTENSIONS = [
+    '.pdf',
+    '.jpg',
+    '.jpeg',
+    '.png',
+    '.gif',
+    '.webp',
+    '.txt',
+];
+
+function extensionOf(name) {
+    const dot = name.lastIndexOf('.');
+    return dot === -1 ? '' : name.slice(dot).toLowerCase();
+}
+
+// Whether a browser can show the file in a tab (otherwise it downloads).
+export function isViewable(filename) {
+    return VIEWABLE_EXTENSIONS.includes(extensionOf(filename));
+}
 
 export function formatFileSize(bytes) {
     if (bytes < 1024) return `${bytes} B`;
@@ -17,10 +56,9 @@ export function formatFileSize(bytes) {
 // Why a file can't be uploaded, or null if it's fine. The server checks
 // again, including the file's contents.
 export function rejectionReason(file) {
-    const extension = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
-    if (!ACCEPTED_TYPES[file.type]?.includes(extension))
-        return 'only PDF and JPEG files are allowed';
-    if (file.size > MAX_FILE_SIZE) return 'files must be 10 MB or smaller';
+    if (!ACCEPTED_EXTENSIONS.includes(extensionOf(file.name)))
+        return `this type of file isn't allowed (allowed: ${ACCEPTED_DESCRIPTION})`;
+    if (file.size > MAX_FILE_SIZE) return 'files must be 20 MB or smaller';
     return null;
 }
 

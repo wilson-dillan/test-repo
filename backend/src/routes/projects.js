@@ -3,15 +3,22 @@ const archiver = require('archiver');
 const db = require('../db');
 const { HttpError } = require('../errors');
 const { requireSuper } = require('../auth');
-const { PROJECT_TYPES } = require('../projectTypes');
+const {
+    PROJECT_TYPES,
+    FINANCING_PROVIDERS,
+    CONTROLS_TYPES,
+} = require('../projectTypes');
 const {
     applyChanges,
     record,
     listHistory,
+    normalizeProjectAnswers,
+    assertProjectEditable,
     EDITABLE_FIELDS,
 } = require('../history');
 const { sendAssignmentEmail } = require('../mailer');
-const { toProject, toTask } = require('../serializers');
+const { toProject, toTask, projectStatus } = require('../serializers');
+const { customerLink } = require('../housecall');
 
 const router = express.Router();
 
@@ -20,12 +27,19 @@ const MAX_NOTE_LENGTH = 2000;
 
 // API field names -> database columns for project edits.
 const PATCHABLE = {
-    customerName: 'customer_name',
+    customerFirstName: 'customer_first_name',
+    customerLastName: 'customer_last_name',
     address: 'address',
     dueDate: 'due_date',
     ownerId: 'owner_id',
-    state: 'state',
     active: 'active',
+    financing: 'financing',
+    financingProvider: 'financing_provider',
+    financingOther: 'financing_other',
+    heatsWithGas: 'heats_with_gas',
+    integratedControls: 'integrated_controls',
+    controlsType: 'controls_type',
+    controlsOther: 'controls_other',
 };
 
 function projectId(req) {
@@ -75,6 +89,11 @@ async function loadProjectDetail(id) {
     ]);
     return {
         ...project,
+        housecallUrl: customerLink(project.housecallCustomerId),
+        status: projectStatus(
+            project.state,
+            tasks.filter((t) => t.active && t.state === 'done').length,
+        ),
         tasks: tasks.map(toTask),
         notes: notes.map((n) => ({
             id: n.id,
@@ -86,6 +105,13 @@ async function loadProjectDetail(id) {
     };
 }
 
+router.get('/options', (req, res) => {
+    res.send({
+        financingProviders: FINANCING_PROVIDERS,
+        controlsTypes: CONTROLS_TYPES,
+    });
+});
+
 router.get('/types', (req, res) => {
     res.send(
         Object.entries(PROJECT_TYPES).map(([id, type]) => ({
@@ -93,6 +119,7 @@ router.get('/types', (req, res) => {
             label: type.label,
             description: type.description,
             tasks: type.tasks,
+            asks: type.asks,
         })),
     );
 });
@@ -101,8 +128,8 @@ router.get('/', async (req, res) => {
     const ownerId = req.query.owner === 'me' ? req.user.id : null;
     const { rows } = await db.query(
         `SELECT p.*, u.display_name AS owner_name,
-                count(t.id) AS task_total,
-                count(t.id) FILTER (WHERE t.state = 'done') AS task_done
+                count(t.id) FILTER (WHERE t.active) AS task_total,
+                count(t.id) FILTER (WHERE t.active AND t.state = 'done') AS task_done
          FROM projects p
          JOIN users u ON u.id = p.owner_id
          LEFT JOIN tasks t ON t.project_id = p.id
@@ -117,48 +144,96 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
     const body = req.body || {};
     const type = PROJECT_TYPES[body.type];
-    if (!type) throw new HttpError(400, 'Choose Whole Home or Partial Home.');
+    if (!type)
+        throw new HttpError(
+            400,
+            'Choose Whole Home, Partial Home or Basic Rebate.',
+        );
 
     const note = String(body.note || '').trim();
     if (note.length > MAX_NOTE_LENGTH)
         throw new HttpError(400, 'Notes must be 2000 characters or fewer.');
 
+    const housecallCustomerId = body.housecallCustomerId
+        ? String(body.housecallCustomerId).trim()
+        : null;
+    if (housecallCustomerId && !/^[\w-]{1,100}$/.test(housecallCustomerId))
+        throw new HttpError(400, 'That Housecall Pro customer id looks wrong.');
+
     const { id, tasks } = await db.transaction(async (client) => {
         const fields = EDITABLE_FIELDS.project;
         const values = {
-            customer_name: await fields.customer_name(body.customerName),
+            customer_first_name: await fields.customer_first_name(
+                body.customerFirstName,
+            ),
+            customer_last_name: await fields.customer_last_name(
+                body.customerLastName,
+            ),
             address: await fields.address(body.address),
             due_date: await fields.due_date(body.dueDate),
             owner_id: await fields.owner_id(body.ownerId, client),
         };
+        const answers = { financing: null };
+        for (const [key, column] of [
+            ['financing', 'financing'],
+            ['financingProvider', 'financing_provider'],
+            ['financingOther', 'financing_other'],
+            ['heatsWithGas', 'heats_with_gas'],
+            ['integratedControls', 'integrated_controls'],
+            ['controlsType', 'controls_type'],
+            ['controlsOther', 'controls_other'],
+        ])
+            if (body[key] !== undefined && body[key] !== null)
+                answers[column] = await fields[column](body[key]);
+        if (answers.financing === null)
+            throw new HttpError(400, 'Say whether the customer is financing.');
+        normalizeProjectAnswers(body.type, answers);
 
         const { rows } = await client.query(
-            `INSERT INTO projects (type, customer_name, address, due_date, owner_id, created_by)
-             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+            `INSERT INTO projects (type, customer_first_name, customer_last_name, address, due_date, owner_id, created_by, housecall_customer_id,
+                                   financing, financing_provider, financing_other, heats_with_gas, integrated_controls, controls_type, controls_other)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+             RETURNING id, customer_name`,
             [
                 body.type,
-                values.customer_name,
+                values.customer_first_name,
+                values.customer_last_name,
                 values.address,
                 values.due_date,
                 values.owner_id,
                 req.user.id,
+                housecallCustomerId,
+                answers.financing === 'true',
+                answers.financing_provider || null,
+                answers.financing_other || '',
+                answers.heats_with_gas == null
+                    ? null
+                    : answers.heats_with_gas === 'true',
+                answers.integrated_controls == null
+                    ? null
+                    : answers.integrated_controls === 'true',
+                answers.controls_type || null,
+                answers.controls_other || '',
             ],
         );
         const id = rows[0].id;
 
         const tasks = [];
         for (const [i, task] of type.tasks.entries()) {
+            const active = !task.onlyIf || answers[task.onlyIf] === 'true';
             const { rows: created } = await client.query(
-                `INSERT INTO tasks (project_id, letter, name, form_name, owner_id)
-                 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-                [id, LETTERS[i], task.name, task.form, values.owner_id],
+                `INSERT INTO tasks (project_id, letter, name, form_name, owner_id, active)
+                 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+                [id, LETTERS[i], task.name, task.form, values.owner_id, active],
             );
-            tasks.push({
-                id: created[0].id,
-                code: `#${id}${LETTERS[i]}`,
-                name: task.name,
-                customerName: values.customer_name,
-            });
+            // Only documents that are needed go in the assignment email.
+            if (active)
+                tasks.push({
+                    id: created[0].id,
+                    code: `#${id}${LETTERS[i]}`,
+                    name: task.name,
+                    customerName: rows[0].customer_name,
+                });
         }
 
         await record(client, {
@@ -211,6 +286,143 @@ router.patch('/:id', async (req, res) => {
     res.send(await loadProjectDetail(id));
 });
 
+// Stage 3: every needed document is in and the application has been sent.
+router.post('/:id/submit', async (req, res) => {
+    const id = projectId(req);
+    await db.transaction(async (client) => {
+        const { rows } = await client.query(
+            'SELECT state FROM projects WHERE id = $1 FOR UPDATE',
+            [id],
+        );
+        if (!rows[0]) throw new HttpError(404, 'Project not found.');
+        await assertProjectEditable(client, id);
+        if (rows[0].state !== 'todo')
+            throw new HttpError(409, 'This application was already submitted.');
+        const { rows: counts } = await client.query(
+            `SELECT count(*) FILTER (WHERE state = 'todo') AS missing
+             FROM tasks WHERE project_id = $1 AND active`,
+            [id],
+        );
+        const missing = Number(counts[0].missing);
+        if (missing)
+            throw new HttpError(
+                400,
+                `Upload all documents first (${missing} still missing).`,
+            );
+        await applyChanges(
+            client,
+            'project',
+            id,
+            { state: 'submitted' },
+            req.user,
+        );
+    });
+    res.send(await loadProjectDetail(id));
+});
+
+const REBATE_NUMBER_MAX = 50;
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+// Stage 4: the rebate arrived, which finishes the application. Warns
+// (409) if the rebate number is already on another project, unless
+// `allowDuplicate` says to go ahead.
+router.post('/:id/rebate', async (req, res) => {
+    const id = projectId(req);
+    const body = req.body || {};
+    const number = String(body.number || '').trim();
+    if (!number) throw new HttpError(400, 'Enter the rebate number.');
+    if (number.length > REBATE_NUMBER_MAX)
+        throw new HttpError(400, 'That rebate number is too long.');
+    const amount = Number(body.amount);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 10000000)
+        throw new HttpError(400, 'Enter the rebate amount in dollars.');
+    const receivedOn = String(body.receivedOn || '');
+    if (!DATE_PATTERN.test(receivedOn) || isNaN(Date.parse(receivedOn)))
+        throw new HttpError(400, 'Enter the date the rebate was received.');
+    if (receivedOn > new Date().toISOString().slice(0, 10))
+        throw new HttpError(400, "The received date can't be in the future.");
+
+    await db.transaction(async (client) => {
+        const { rows } = await client.query(
+            'SELECT state FROM projects WHERE id = $1 FOR UPDATE',
+            [id],
+        );
+        if (!rows[0]) throw new HttpError(404, 'Project not found.');
+        await assertProjectEditable(client, id);
+        if (rows[0].state !== 'submitted')
+            throw new HttpError(
+                409,
+                rows[0].state === 'done'
+                    ? 'The rebate for this application was already recorded.'
+                    : 'Mark the application as submitted first.',
+            );
+
+        if (!body.allowDuplicate) {
+            const { rows: same } = await client.query(
+                `SELECT id, customer_name FROM projects
+                 WHERE lower(rebate_number) = lower($1) AND id <> $2 LIMIT 1`,
+                [number, id],
+            );
+            if (same[0])
+                throw new HttpError(
+                    409,
+                    `Rebate number ${number} is already recorded on project #${same[0].id} (${same[0].customer_name}). Check it's correct.`,
+                    { duplicateProjectId: same[0].id },
+                );
+        }
+
+        await client.query(
+            `UPDATE projects
+             SET state = 'done', completed_at = now(), rebate_number = $2,
+                 rebate_amount = $3, rebate_received_on = $4
+             WHERE id = $1`,
+            [id, number, Math.round(amount * 100) / 100, receivedOn],
+        );
+        await record(client, {
+            projectId: id,
+            actorId: req.user.id,
+            action: 'rebate',
+            newValue: JSON.stringify({ number, amount, receivedOn }),
+        });
+    });
+    res.send(await loadProjectDetail(id));
+});
+
+// Super user only: steps an application back one stage. Done goes back
+// to Submitted (clearing the rebate); Submitted goes back to To Do.
+router.post('/:id/reopen', requireSuper, async (req, res) => {
+    const id = projectId(req);
+    await db.transaction(async (client) => {
+        const { rows } = await client.query(
+            'SELECT state FROM projects WHERE id = $1 FOR UPDATE',
+            [id],
+        );
+        if (!rows[0]) throw new HttpError(404, 'Project not found.');
+        await assertProjectEditable(client, id);
+        const from = rows[0].state;
+        if (from === 'todo')
+            throw new HttpError(409, "This application isn't submitted yet.");
+        const to = from === 'done' ? 'submitted' : 'todo';
+        await client.query(
+            from === 'done'
+                ? `UPDATE projects SET state = 'submitted', completed_at = NULL,
+                       rebate_number = NULL, rebate_amount = NULL, rebate_received_on = NULL
+                   WHERE id = $1`
+                : `UPDATE projects SET state = 'todo', submitted_at = NULL WHERE id = $1`,
+            [id],
+        );
+        await record(client, {
+            projectId: id,
+            actorId: req.user.id,
+            action: 'reopen',
+            field: 'state',
+            oldValue: from,
+            newValue: to,
+        });
+    });
+    res.send(await loadProjectDetail(id));
+});
+
 router.post('/:id/notes', async (req, res) => {
     const id = projectId(req);
     const body = String(req.body?.body || '').trim();
@@ -219,6 +431,7 @@ router.post('/:id/notes', async (req, res) => {
         throw new HttpError(400, 'Notes must be 2000 characters or fewer.');
 
     await loadProject(id);
+    await assertProjectEditable(db, id);
     const { rows } = await db.query(
         `INSERT INTO project_notes (project_id, author_id, body)
          VALUES ($1, $2, $3) RETURNING *`,

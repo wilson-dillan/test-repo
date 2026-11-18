@@ -1,5 +1,10 @@
 const db = require('./db');
 const { HttpError } = require('./errors');
+const {
+    PROJECT_TYPES,
+    FINANCING_PROVIDERS,
+    CONTROLS_TYPES,
+} = require('./projectTypes');
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -42,22 +47,60 @@ async function state(value) {
     return value;
 }
 
-async function active(value) {
-    if (typeof value !== 'boolean')
-        throw new HttpError(400, 'Active must be true or false.');
-    return String(value);
+// Projects reach Done only by recording a rebate (see routes/projects.js).
+async function projectState(value) {
+    if (value !== 'todo' && value !== 'submitted')
+        throw new HttpError(400, 'State must be To Do or Submitted.');
+    return value;
+}
+
+const STAGE_ORDER = { todo: 0, submitted: 1, done: 2 };
+
+// `nullable` is for questions only some project types ask, where "no
+// answer" is fine for the others.
+function yesNo(label, { nullable = false } = {}) {
+    return async (value) => {
+        if (nullable && (value === null || value === undefined)) return null;
+        if (typeof value !== 'boolean')
+            throw new HttpError(400, `Answer Yes or No for ${label}.`);
+        return String(value);
+    };
+}
+
+const active = yesNo('active');
+
+function oneOf(label, options) {
+    return async (value) => {
+        if (value === null || value === undefined || value === '') return null;
+        if (!options.includes(value))
+            throw new HttpError(
+                400,
+                `Choose a ${label}: ${options.join(', ')}.`,
+            );
+        return value;
+    };
 }
 
 // The fields users can change on each kind of record, with how to
 // validate them. Every change to one of these is recorded in history.
 const EDITABLE_FIELDS = {
     project: {
-        customer_name: text('Customer name', 200),
+        customer_first_name: text('First name', 100),
+        customer_last_name: text('Last name', 100, { required: false }),
         address: text('Address', 300),
         due_date: date,
         owner_id: owner,
-        state,
+        state: projectState,
         active,
+        financing: yesNo('financing'),
+        financing_provider: oneOf('financing provider', FINANCING_PROVIDERS),
+        financing_other: text('Financing provider name', 100, {
+            required: false,
+        }),
+        heats_with_gas: yesNo('natural gas heating', { nullable: true }),
+        integrated_controls: yesNo('integrated controls', { nullable: true }),
+        controls_type: oneOf('controls type', CONTROLS_TYPES),
+        controls_other: text('Controls name', 100, { required: false }),
     },
     task: {
         owner_id: owner,
@@ -90,6 +133,12 @@ async function writeFields(client, kind, id, values) {
     const state = values.find(([field]) => field === 'state');
     if (state)
         sets.push(`completed_at = ${state[1] === 'done' ? 'now()' : 'NULL'}`);
+    if (state && kind === 'project')
+        sets.push(
+            state[1] === 'todo'
+                ? 'submitted_at = NULL'
+                : 'submitted_at = COALESCE(submitted_at, now())',
+        );
     await client.query(
         `UPDATE ${TABLES[kind]} SET ${sets.join(', ')} WHERE id = $1`,
         [id, ...values.map(([, value]) => value)],
@@ -116,21 +165,131 @@ async function record(client, entry) {
 // Validates and applies field changes, recording one history entry per
 // changed field. Only the super user may move something from Done back to
 // To Do. Returns the changed fields.
+const INACTIVE_MESSAGE =
+    "This application is inactive, so it can't be edited. Only the super user can reactivate it.";
+
+// Throws if the project is inactive (read-only).
+async function assertProjectEditable(client, projectId) {
+    const { rows } = await client.query(
+        'SELECT active FROM projects WHERE id = $1',
+        [projectId],
+    );
+    if (rows[0] && !rows[0].active) throw new HttpError(403, INACTIVE_MESSAGE);
+}
+
+// Cross-field rules for a project's questions. `values` holds every field
+// as text (the row merged with the requested changes) and is updated in
+// place: answers that no longer apply are cleared.
+function normalizeProjectAnswers(type, values) {
+    const asks = PROJECT_TYPES[type]?.asks || [];
+
+    if (values.financing !== 'true') {
+        values.financing_provider = null;
+        values.financing_other = '';
+    } else if (!values.financing_provider)
+        throw new HttpError(400, 'Choose the financing provider.');
+    if (values.financing_provider !== 'Other') values.financing_other = '';
+    else if (!values.financing_other)
+        throw new HttpError(400, "Enter the financing provider's name.");
+
+    if (!asks.includes('heats_with_gas')) values.heats_with_gas = null;
+    else if (values.heats_with_gas == null)
+        throw new HttpError(
+            400,
+            'Say whether the home heats with natural gas.',
+        );
+
+    if (!asks.includes('integrated_controls')) {
+        values.integrated_controls = null;
+        values.controls_type = null;
+        values.controls_other = '';
+    } else {
+        if (values.integrated_controls == null)
+            throw new HttpError(
+                400,
+                'Say whether there are integrated controls.',
+            );
+        if (values.integrated_controls !== 'true') {
+            values.controls_type = null;
+            values.controls_other = '';
+        } else if (!values.controls_type)
+            throw new HttpError(400, 'Choose the type of integrated controls.');
+        if (values.controls_type !== 'Other') values.controls_other = '';
+        else if (!values.controls_other)
+            throw new HttpError(400, 'Enter the name of the controls.');
+    }
+    return values;
+}
+
+const ANSWER_FIELDS = [
+    'financing',
+    'financing_provider',
+    'financing_other',
+    'heats_with_gas',
+    'integrated_controls',
+    'controls_type',
+    'controls_other',
+];
+
+// Validates and applies field changes, recording one history entry per
+// changed field. Only the super user may move something from Done back to
+// To Do, or reactivate a project. Returns the changed fields.
 async function applyChanges(client, kind, id, changes, user) {
     const row = await lockRow(client, kind, id);
     const fields = EDITABLE_FIELDS[kind];
 
-    const changed = [];
+    // An inactive project is read-only; the only change allowed is the
+    // super user reactivating it.
+    const onlyReactivating =
+        kind === 'project' && Object.keys(changes || {}).join() === 'active';
+    if (!onlyReactivating)
+        await assertProjectEditable(
+            client,
+            kind === 'project' ? id : row.project_id,
+        );
+
+    const pending = {};
     for (const [field, raw] of Object.entries(changes || {})) {
         if (!fields[field])
             throw new HttpError(400, `"${field}" can't be changed.`);
-        const newValue = await fields[field](raw, client);
-        const oldValue = toText(row[field]);
-        if (newValue === oldValue) continue;
-        if (field === 'state' && oldValue === 'done' && !user.isSuper)
+        pending[field] = await fields[field](raw, client);
+    }
+
+    // Answering questions can clear other answers that no longer apply.
+    if (kind === 'project' && ANSWER_FIELDS.some((f) => f in pending)) {
+        const merged = Object.fromEntries(
+            ANSWER_FIELDS.map((f) => [
+                f,
+                f in pending ? pending[f] : toText(row[f]),
+            ]),
+        );
+        Object.assign(pending, normalizeProjectAnswers(row.type, merged));
+        if (
+            pending.heats_with_gas === 'true' &&
+            toText(row.heats_with_gas) !== 'true' &&
+            row.state !== 'todo' &&
+            !user.isSuper
+        )
             throw new HttpError(
                 403,
-                'This is marked done. Only the super user can reopen it.',
+                'This application has already been submitted, and that would add a document to upload. Only the super user can change it.',
+            );
+    }
+
+    const changed = [];
+    for (const [field, newValue] of Object.entries(pending)) {
+        const oldValue = toText(row[field]);
+        if (newValue === oldValue) continue;
+        if (
+            field === 'state' &&
+            STAGE_ORDER[newValue] < STAGE_ORDER[oldValue] &&
+            !user.isSuper
+        )
+            throw new HttpError(
+                403,
+                oldValue === 'done'
+                    ? 'This is marked done. Only the super user can reopen it.'
+                    : 'This has been submitted. Only the super user can move it back.',
             );
         if (field === 'active' && oldValue === 'false' && !user.isSuper)
             throw new HttpError(
@@ -156,8 +315,44 @@ async function applyChanges(client, kind, id, changes, user) {
                 ...change,
             });
         }
+        if (
+            kind === 'project' &&
+            changed.some((c) => c.field === 'heats_with_gas')
+        )
+            await syncTasks(client, id, user);
     }
     return changed;
+}
+
+// Switches "only if" tasks (like the Natural Gas Bill) on or off to match
+// the project's answers, logging each switch. A switched-off task keeps its
+// uploads, ready for if the answer changes back.
+async function syncTasks(client, projectId, user) {
+    const { rows: projects } = await client.query(
+        'SELECT * FROM projects WHERE id = $1',
+        [projectId],
+    );
+    const project = projects[0];
+    const forms = PROJECT_TYPES[project.type]?.forms || [];
+    for (const form of forms.filter((f) => f.onlyIf)) {
+        const needed = project[form.onlyIf] === true;
+        const { rows } = await client.query(
+            `UPDATE tasks SET active = $3
+             WHERE project_id = $1 AND name = $2 AND active <> $3
+             RETURNING id`,
+            [projectId, form.name, needed],
+        );
+        for (const task of rows)
+            await record(client, {
+                projectId,
+                taskId: task.id,
+                actorId: user.id,
+                action: 'update',
+                field: 'active',
+                oldValue: String(!needed),
+                newValue: String(needed),
+            });
+    }
 }
 
 // Reverts one recorded change (super user only), as long as nothing has
@@ -171,12 +366,22 @@ async function undo(client, historyId, user) {
     if (!entry) throw new HttpError(404, 'History entry not found.');
     if (entry.action !== 'update')
         throw new HttpError(400, 'Only changes can be undone.');
+    // e.g. changes to the old single customer-name field
+    if (!EDITABLE_FIELDS[entry.task_id ? 'task' : 'project'][entry.field])
+        throw new HttpError(400, "This older change can't be undone.");
+    if (ANSWER_FIELDS.includes(entry.field))
+        throw new HttpError(
+            400,
+            "Change this answer on the project page instead; it can't be undone on its own.",
+        );
     if (entry.undone_at)
         throw new HttpError(409, 'This change was already undone.');
 
     const kind = entry.task_id ? 'task' : 'project';
     const id = entry.task_id || entry.project_id;
     const row = await lockRow(client, kind, id);
+    if (!(kind === 'project' && entry.field === 'active'))
+        await assertProjectEditable(client, entry.project_id);
     if (toText(row[entry.field]) !== entry.new_value)
         throw new HttpError(
             409,
@@ -188,6 +393,8 @@ async function undo(client, historyId, user) {
         'UPDATE history SET undone_by = $2, undone_at = now() WHERE id = $1',
         [historyId, user.id],
     );
+    if (kind === 'project' && entry.field === 'heats_with_gas')
+        await syncTasks(client, id, user);
     await record(client, {
         projectId: entry.project_id,
         taskId: entry.task_id,
@@ -253,8 +460,25 @@ async function listHistory(where, params, limit = 200) {
         undone: Boolean(row.undone_at),
         undoneBy: row.undone_by_name || (row.undone_at && 'Deleted user'),
         undoneAt: row.undone_at,
-        undoable: row.action === 'update' && !row.undone_at,
+        // Answers that clear or depend on others are changed on the project
+        // page instead of being undone one by one.
+        undoable:
+            row.action === 'update' &&
+            !row.undone_at &&
+            !ANSWER_FIELDS.includes(row.field) &&
+            Boolean(
+                EDITABLE_FIELDS[row.task_id ? 'task' : 'project'][row.field],
+            ),
     }));
 }
 
-module.exports = { applyChanges, undo, record, listHistory, EDITABLE_FIELDS };
+module.exports = {
+    applyChanges,
+    undo,
+    record,
+    listHistory,
+    syncTasks,
+    normalizeProjectAnswers,
+    assertProjectEditable,
+    EDITABLE_FIELDS,
+};

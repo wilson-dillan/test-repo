@@ -12,18 +12,18 @@ router.get('/', async (req, res) => {
             `SELECT u.id, u.display_name,
                     count(t.id) AS total,
                     count(t.id) FILTER (WHERE t.state = 'done') AS done
-             FROM users u LEFT JOIN tasks t ON t.owner_id = u.id
+             FROM users u LEFT JOIN tasks t ON t.owner_id = u.id AND t.active
              WHERE u.active
              GROUP BY u.id ORDER BY lower(u.display_name)`,
         ),
         db.query(
             `SELECT count(*) AS total, count(*) FILTER (WHERE state = 'done') AS done
-             FROM tasks`,
+             FROM tasks WHERE active`,
         ),
         db.query(
             `SELECT count(*) AS total, count(*) FILTER (WHERE state = 'done') AS done,
                     count(*) FILTER (WHERE NOT active) AS inactive,
-                    count(*) FILTER (WHERE active AND state = 'todo') AS open
+                    count(*) FILTER (WHERE active AND state <> 'done') AS open
              FROM projects`,
         ),
         db.query(

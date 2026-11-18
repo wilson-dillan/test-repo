@@ -1,7 +1,13 @@
 import PropTypes from 'prop-types';
 import { Link } from 'react-router-dom';
 import ProgressBar from 'react-bootstrap/ProgressBar';
-import { DueDate, InactiveBadge, Owner, StatePill } from './ui';
+import {
+    DueDate,
+    InactiveBadge,
+    Owner,
+    ProjectStatusPill,
+    StatePill,
+} from './ui';
 
 export function ProjectCard({ project }) {
     const percent = project.taskTotal
@@ -16,7 +22,7 @@ export function ProjectCard({ project }) {
                 <span className="id-badge">#{project.id}</span>
                 <span className="d-flex gap-1">
                     {!project.active && <InactiveBadge />}
-                    <StatePill state={project.state} />
+                    <ProjectStatusPill status={project.status} />
                 </span>
             </div>
             <div>

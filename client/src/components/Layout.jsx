@@ -6,20 +6,18 @@ import {
     faBars,
     faChartColumn,
     faCirclePlus,
-    faClockRotateLeft,
     faHouse,
     faRightFromBracket,
     faUsers,
 } from '@fortawesome/free-solid-svg-icons';
 import logo from '../assets/wilson-logo.png';
 import { useAuth } from '../hooks';
-import { ActivityDrawer } from './ActivityDrawer';
+import { ProjectSearch } from './ProjectSearch';
 import { Avatar } from './ui';
 
 export function Layout() {
     const { user, logout } = useAuth();
     const [menuOpen, setMenuOpen] = useState(false);
-    const [activityOpen, setActivityOpen] = useState(false);
     const location = useLocation();
 
     useEffect(() => setMenuOpen(false), [location.pathname]);
@@ -69,16 +67,9 @@ export function Layout() {
                         'Track New Application',
                         'sidebar-cta',
                     )}
+                    <ProjectSearch />
                     {link('/dashboard', faChartColumn, 'Dashboard')}
                     {link('/', faHouse, 'Home')}
-                    <button
-                        type="button"
-                        className="sidebar-link"
-                        onClick={() => setActivityOpen(true)}
-                    >
-                        <FontAwesomeIcon icon={faClockRotateLeft} />
-                        Activity
-                    </button>
 
                     {user.isSuper && (
                         <>
@@ -111,11 +102,6 @@ export function Layout() {
             <main className="main">
                 <Outlet />
             </main>
-
-            <ActivityDrawer
-                show={activityOpen}
-                onHide={() => setActivityOpen(false)}
-            />
         </div>
     );
 }

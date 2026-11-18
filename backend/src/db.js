@@ -33,6 +33,7 @@ async function init(connectionString = process.env.DATABASE_URL) {
     await pool.query(
         fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8'),
     );
+    await require('./migrations').runMigrations(transaction);
 }
 
 async function teardown() {

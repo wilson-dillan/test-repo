@@ -10,16 +10,29 @@ import {
     faArrowRight,
     faCheck,
     faHouseChimney,
+    faBolt,
     faHouseChimneyWindow,
+    faLink,
 } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../api';
 import { useAuth, useLoad } from '../hooks';
 import { formatDate } from '../format';
 import { LoadError, PageLoader } from '../components/ui';
+import { HousecallSearch } from '../components/HousecallSearch';
+import { ProjectQuestions } from '../components/ProjectQuestions';
+import {
+    BLANK_ANSWERS,
+    answerPayload,
+    answerProblem,
+    asks,
+    describeControls,
+    describeFinancing,
+} from '../components/questionRules';
 
 const TYPE_ICONS = {
     whole_home: faHouseChimney,
     partial_home: faHouseChimneyWindow,
+    basic_rebate: faBolt,
 };
 
 // One prompt per screen. `required` steps can't be skipped.
@@ -27,22 +40,20 @@ const STEPS = [
     {
         key: 'type',
         question: 'What kind of project is this?',
-        helper: 'This decides which tasks and forms are created.',
+        helper: 'This decides which documents need to be uploaded.',
         required: true,
     },
     {
-        key: 'customerName',
-        question: "What's the customer's name?",
-        helper: 'Shown on the project card and every task.',
+        key: 'customer',
+        question: 'Who is the customer?',
+        helper: 'Search Housecall Pro to fill this in, or type it yourself.',
         required: true,
-        maxLength: 200,
     },
     {
-        key: 'address',
-        question: 'Where is the job?',
-        helper: 'The address of the home.',
+        key: 'questions',
+        question: 'A few questions',
+        helper: 'These decide which documents are needed. You can change them later.',
         required: true,
-        maxLength: 300,
     },
     {
         key: 'dueDate',
@@ -65,27 +76,44 @@ const STEPS = [
 
 export function AddProjectPage() {
     const { data, error, reload } = useLoad(() =>
-        Promise.all([api.get('/projects/types'), api.get('/users')]),
+        Promise.all([
+            api.get('/projects/types'),
+            api.get('/users'),
+            api.get('/housecall/status'),
+            api.get('/projects/options'),
+        ]),
     );
     if (error) return <LoadError error={error} onRetry={reload} />;
     if (!data) return <PageLoader />;
-    return <Wizard types={data[0]} users={data[1]} />;
+    return (
+        <Wizard
+            types={data[0]}
+            users={data[1]}
+            housecall={data[2].connected}
+            options={data[3]}
+        />
+    );
 }
 
-function Wizard({ types, users }) {
+function Wizard({ types, users, housecall, options }) {
     const { user, notifyChange } = useAuth();
     const navigate = useNavigate();
     const [step, setStep] = useState(0);
     const [values, setValues] = useState({
         type: '',
-        customerName: '',
+        customerFirstName: '',
+        customerLastName: '',
         address: '',
         dueDate: '',
         ownerId: String(user.id),
         note: '',
+        housecallCustomerId: null,
+        ...BLANK_ANSWERS,
     });
     const [error, setError] = useState(null);
     const [submitting, setSubmitting] = useState(false);
+    // When Housecall Pro last filled the customer card (to highlight it).
+    const [filledAt, setFilledAt] = useState(0);
 
     const reviewing = step === STEPS.length;
     const current = STEPS[step];
@@ -98,7 +126,24 @@ function Wizard({ types, users }) {
     };
 
     const next = () => {
-        if (current.required && !String(values[current.key]).trim()) {
+        if (current.key === 'customer') {
+            const missing = [
+                !values.customerFirstName.trim() && 'first name',
+                !values.address.trim() && 'address',
+            ].filter(Boolean);
+            if (missing.length) {
+                setError(
+                    `Please enter the customer's ${missing.join(' and ')}.`,
+                );
+                return;
+            }
+        } else if (current.key === 'questions') {
+            const problem = answerProblem(type, values);
+            if (problem) {
+                setError(problem);
+                return;
+            }
+        } else if (current.required && !String(values[current.key]).trim()) {
             setError('Please answer this one to continue.');
             return;
         }
@@ -117,6 +162,7 @@ function Wizard({ types, users }) {
         try {
             const project = await api.post('/projects', {
                 ...values,
+                ...answerPayload(type, values),
                 ownerId: Number(values.ownerId),
                 dueDate: values.dueDate || null,
             });
@@ -172,17 +218,54 @@ function Wizard({ types, users }) {
                     <div onKeyDown={onKeyDown}>
                         <h2 className="question">{current.question}</h2>
                         <p className="helper">{current.helper}</p>
-                        <StepInput
-                            step={current}
-                            value={values[current.key]}
-                            onChange={(value) => set(current.key, value)}
-                            onPick={(value) => {
-                                set(current.key, value);
-                                setStep((s) => s + 1);
-                            }}
-                            types={types}
-                            users={users}
-                        />
+                        {current.key === 'questions' ? (
+                            <ProjectQuestions
+                                type={type}
+                                values={values}
+                                onChange={set}
+                                options={options}
+                            />
+                        ) : current.key === 'customer' ? (
+                            <>
+                                {housecall && (
+                                    <HousecallSearch
+                                        onPick={(customer) => {
+                                            setValues((v) => ({
+                                                ...v,
+                                                customerFirstName:
+                                                    customer.firstName,
+                                                customerLastName:
+                                                    customer.lastName,
+                                                address: customer.address,
+                                                housecallCustomerId:
+                                                    customer.customerId,
+                                            }));
+                                            setFilledAt(Date.now());
+                                            setError(null);
+                                        }}
+                                    />
+                                )}
+                                <CustomerCard
+                                    key={filledAt}
+                                    values={values}
+                                    onChange={set}
+                                    justFilled={filledAt > 0}
+                                    autoFocus={!housecall}
+                                />
+                            </>
+                        ) : (
+                            <StepInput
+                                step={current}
+                                value={values[current.key]}
+                                onChange={(value) => set(current.key, value)}
+                                onPick={(value) => {
+                                    set(current.key, value);
+                                    setStep((s) => s + 1);
+                                }}
+                                types={types}
+                                users={users}
+                            />
+                        )}
                     </div>
                 )}
 
@@ -238,6 +321,72 @@ function Wizard({ types, users }) {
 Wizard.propTypes = {
     types: PropTypes.array.isRequired,
     users: PropTypes.array.isRequired,
+    housecall: PropTypes.bool,
+    options: PropTypes.object.isRequired,
+};
+
+// First name, last name and address together, so it's clear what
+// Housecall Pro filled in. Everything stays editable.
+function CustomerCard({ values, onChange, justFilled, autoFocus }) {
+    const linked = Boolean(values.housecallCustomerId);
+    return (
+        <div className={`customer-card ${justFilled ? 'just-filled' : ''}`}>
+            <div className="customer-card-head">
+                <span className="title">Customer</span>
+                {linked && (
+                    <span className="hcp-chip">
+                        <FontAwesomeIcon icon={faLink} className="me-1" />
+                        Linked to Housecall Pro
+                    </span>
+                )}
+            </div>
+            <div className="row g-3">
+                <Form.Group className="col-sm-6" controlId="customerFirstName">
+                    <Form.Label>First name</Form.Label>
+                    <Form.Control
+                        value={values.customerFirstName}
+                        onChange={(e) =>
+                            onChange('customerFirstName', e.target.value)
+                        }
+                        maxLength={100}
+                        autoComplete="off"
+                        autoFocus={autoFocus}
+                    />
+                </Form.Group>
+                <Form.Group className="col-sm-6" controlId="customerLastName">
+                    <Form.Label>Last name</Form.Label>
+                    <Form.Control
+                        value={values.customerLastName}
+                        onChange={(e) =>
+                            onChange('customerLastName', e.target.value)
+                        }
+                        maxLength={100}
+                        autoComplete="off"
+                    />
+                </Form.Group>
+                <Form.Group className="col-12" controlId="customerAddress">
+                    <Form.Label>Job address</Form.Label>
+                    <Form.Control
+                        value={values.address}
+                        onChange={(e) => onChange('address', e.target.value)}
+                        maxLength={300}
+                        autoComplete="off"
+                    />
+                </Form.Group>
+            </div>
+            <div className="form-text mt-2">
+                For a business, put its name in First name and leave Last name
+                blank.
+            </div>
+        </div>
+    );
+}
+
+CustomerCard.propTypes = {
+    values: PropTypes.object.isRequired,
+    onChange: PropTypes.func.isRequired,
+    justFilled: PropTypes.bool,
+    autoFocus: PropTypes.bool,
 };
 
 function StepInput({ step, value, onChange, onPick, types, users }) {
@@ -266,7 +415,13 @@ function StepInput({ step, value, onChange, onPick, types, users }) {
                             <span className="title">{type.label}</span>
                             <span className="desc">{type.description}</span>
                             <span className="tasks">
-                                {type.tasks.length} forms to upload
+                                {type.tasks
+                                    .map((t) =>
+                                        t.onlyIf
+                                            ? `${t.name} (if gas heat)`
+                                            : t.name,
+                                    )
+                                    .join(' · ')}
                             </span>
                         </button>
                     ))}
@@ -312,13 +467,30 @@ StepInput.propTypes = {
 function Review({ values, type, owner, onEdit }) {
     const rows = [
         ['type', 'Type', type?.label],
-        ['customerName', 'Customer', values.customerName],
-        ['address', 'Address', values.address],
+        [
+            'customer',
+            'Customer',
+            `${values.customerFirstName} ${values.customerLastName}`.trim(),
+        ],
+        ['customer', 'Address', values.address],
         [
             'dueDate',
             'Due date',
             values.dueDate ? formatDate(values.dueDate) : '—',
         ],
+        ...(asks(type, 'heats_with_gas')
+            ? [
+                  [
+                      'questions',
+                      'Natural gas heat',
+                      values.heatsWithGas ? 'Yes' : 'No',
+                  ],
+              ]
+            : []),
+        ...(asks(type, 'integrated_controls')
+            ? [['questions', 'Integrated controls', describeControls(values)]]
+            : []),
+        ['questions', 'Financing', describeFinancing(values)],
         ['ownerId', 'Owner', owner?.displayName],
         ['note', 'Notes', values.note || '—'],
     ];
@@ -331,7 +503,7 @@ function Review({ values, type, owner, onEdit }) {
             <dl className="review-list">
                 {rows.map(([key, label, value]) => (
                     <div
-                        key={key}
+                        key={label}
                         className="contents"
                         style={{ display: 'contents' }}
                     >
@@ -343,13 +515,26 @@ function Review({ values, type, owner, onEdit }) {
                     </div>
                 ))}
             </dl>
+            {values.housecallCustomerId && (
+                <div className="hcp-linked mt-3">
+                    <FontAwesomeIcon icon={faLink} className="me-2" />
+                    Linked to this customer in Housecall Pro.
+                </div>
+            )}
             {type && (
                 <div className="mt-4">
-                    <div className="form-label">Forms to upload</div>
+                    <div className="form-label">Documents to upload</div>
                     <div className="task-preview">
-                        {type.tasks.map((task, i) => (
-                            <span key={task.name + i}>{task.name}</span>
-                        ))}
+                        {type.tasks
+                            .filter(
+                                (t) =>
+                                    !t.onlyIf ||
+                                    (t.onlyIf === 'heats_with_gas' &&
+                                        values.heatsWithGas),
+                            )
+                            .map((task) => (
+                                <span key={task.name}>{task.name}</span>
+                            ))}
                     </div>
                 </div>
             )}

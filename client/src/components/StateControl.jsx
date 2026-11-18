@@ -15,17 +15,24 @@ import { useAuth } from '../hooks';
 
 // Shows the To Do / Done state with a "Mark as done" button that asks for
 // confirmation, since only the super user can reopen something.
-export function StateControl({ state, what, onChange, doneHint }) {
+export function StateControl({
+    state,
+    status,
+    what,
+    onChange,
+    doneHint,
+    autoComplete,
+}) {
     const { user } = useAuth();
     const [confirming, setConfirming] = useState(null);
 
     return (
         <div className="state-panel">
-            <StatePill state={state} />
+            <StatePill state={status || state} />
             {state === 'todo' && doneHint && (
                 <span className="lock-note">{doneHint}</span>
             )}
-            {state === 'todo' && !doneHint && (
+            {state === 'todo' && !doneHint && !autoComplete && (
                 <Button variant="success" onClick={() => setConfirming('done')}>
                     <FontAwesomeIcon icon={faCircleCheck} className="me-2" />
                     Mark as done
@@ -106,12 +113,20 @@ export function ActiveControl({ active, onChange }) {
                 onHide={() => setConfirming(null)}
                 onConfirm={() => onChange(false)}
                 icon={faBoxArchive}
-                title="Set this project as inactive?"
-                confirmLabel="Yes, set inactive"
+                title="Mark this application as inactive?"
+                confirmLabel="Yes, mark inactive"
                 confirmVariant="secondary"
             >
-                It stays visible everywhere with an Inactive label, and nothing
-                is deleted. Only the super user can reactivate it.
+                <p>
+                    <strong>This can&apos;t be undone.</strong> An inactive
+                    application can no longer be edited: no uploads, notes,
+                    reassignments or changes. It stays listed with an Inactive
+                    label. Only the super user can reactivate it.
+                </p>
+                <p className="mb-0">
+                    Note: applications can&apos;t be deleted once created.
+                    Marking one inactive is how you set it aside.
+                </p>
             </ConfirmModal>
             <ConfirmModal
                 show={confirming === 'active'}
@@ -136,8 +151,12 @@ ActiveControl.propTypes = {
 
 StateControl.propTypes = {
     state: PropTypes.oneOf(['todo', 'done']).isRequired,
+    // what the pill shows, e.g. 'in_progress' for a project
+    status: PropTypes.string,
     what: PropTypes.string.isRequired,
     onChange: PropTypes.func.isRequired,
     // Shown instead of "Mark as done" when something else completes it.
     doneHint: PropTypes.string,
+    // Completed by something else (an upload): no "Mark as done" button.
+    autoComplete: PropTypes.bool,
 };

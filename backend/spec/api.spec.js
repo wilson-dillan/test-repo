@@ -292,7 +292,10 @@ run('API', () => {
     test('creating a project creates its numbered tasks', async () => {
         const { status, data } = await alice.post('/api/projects', {
             type: 'whole_home',
-            customerName: 'Jane Smith',
+            heatsWithGas: true,
+            financing: false,
+            customerFirstName: 'Jane',
+            customerLastName: 'Smith',
             address: '12 Oak St',
             dueDate: '2026-12-01',
             ownerId: bobId,
@@ -317,15 +320,80 @@ run('API', () => {
         taskA = project.tasks[0];
     });
 
+    test('a project can remember its Housecall Pro customer', async () => {
+        const { data } = await alice.post('/api/projects', {
+            type: 'partial_home',
+            integratedControls: false,
+            financing: false,
+            customerFirstName: 'Margaret',
+            customerLastName: 'Thompson',
+            address: '418 Willow Creek Rd',
+            ownerId: aliceId,
+            housecallCustomerId: 'cus_abc123',
+        });
+        expect(data.housecallCustomerId).toBe('cus_abc123');
+        expect(data.housecallUrl).toBe(
+            'https://pro.housecallpro.com/app/customers/cus_abc123',
+        );
+        const bad = await alice.post('/api/projects', {
+            type: 'partial_home',
+            integratedControls: false,
+            financing: false,
+            customerFirstName: 'X',
+            customerLastName: '',
+            address: 'Y',
+            ownerId: aliceId,
+            housecallCustomerId: '../../evil',
+        });
+        expect(bad.status).toBe(400);
+        await boss.del(`/api/projects/${data.id}`);
+    });
+
+    test('customer first and last names are kept separately', async () => {
+        const { data } = await alice.post('/api/projects', {
+            type: 'partial_home',
+            integratedControls: false,
+            financing: false,
+            customerFirstName: ' Mary ',
+            customerLastName: 'Van Buren',
+            address: '1 Main St',
+            ownerId: aliceId,
+        });
+        expect(data).toMatchObject({
+            customerFirstName: 'Mary',
+            customerLastName: 'Van Buren',
+            customerName: 'Mary Van Buren',
+        });
+        const { data: edited } = await alice.patch(`/api/projects/${data.id}`, {
+            customerLastName: 'Smith',
+        });
+        expect(edited.customerName).toBe('Mary Smith');
+        expect(edited.history[0]).toMatchObject({
+            field: 'customer_last_name',
+            oldValue: 'Van Buren',
+            newValue: 'Smith',
+        });
+        // A business can have no last name.
+        const { data: biz } = await alice.patch(`/api/projects/${data.id}`, {
+            customerFirstName: 'Westbrook Dental',
+            customerLastName: '',
+        });
+        expect(biz.customerName).toBe('Westbrook Dental');
+        await boss.del(`/api/projects/${data.id}`);
+    });
+
     test('validates new projects', async () => {
         const { status, data } = await alice.post('/api/projects', {
             type: 'whole_home',
-            customerName: '',
+            heatsWithGas: true,
+            financing: false,
+            customerFirstName: '',
+            customerLastName: '',
             address: 'x',
             ownerId: bobId,
         });
         expect(status).toBe(400);
-        expect(data.error).toMatch(/Customer name/);
+        expect(data.error).toMatch(/First name/);
     });
 
     test('reassigning a task is logged with names', async () => {
@@ -471,16 +539,11 @@ run('API', () => {
         expect(aliceTasks.data).toEqual([]);
     });
 
-    test('marking a project done is final for regular users', async () => {
-        await bob.patch(`/api/projects/${project.id}`, { state: 'done' });
-        const reopen = await bob.patch(`/api/projects/${project.id}`, {
-            state: 'todo',
+    test("a project's stage can't be set directly", async () => {
+        const res = await bob.patch(`/api/projects/${project.id}`, {
+            state: 'done',
         });
-        expect(reopen.status).toBe(403);
-        const superReopen = await boss.patch(`/api/projects/${project.id}`, {
-            state: 'todo',
-        });
-        expect(superReopen.data.state).toBe('todo');
+        expect(res.status).toBe(400);
     });
 
     test('dashboard stats', async () => {
@@ -503,7 +566,10 @@ run('API', () => {
     test('inactive projects stay listed and only the super user reactivates', async () => {
         const second = await bob.post('/api/projects', {
             type: 'partial_home',
-            customerName: 'Old Lead',
+            integratedControls: false,
+            financing: false,
+            customerFirstName: 'Old',
+            customerLastName: 'Lead',
             address: '1 Elm St',
             ownerId: bobId,
         });
@@ -551,7 +617,7 @@ run('API', () => {
         expect(superBack.data.active).toBe(true);
     });
 
-    test('uploading every form completes the project; done forms are locked', async () => {
+    test('uploading every form makes it ready to submit; done forms are locked', async () => {
         const form = () => {
             const body = new FormData();
             body.append(
@@ -577,15 +643,10 @@ run('API', () => {
                     .status,
             ).toBe(201);
 
+        // Nothing finishes on its own: the application waits to be submitted.
         const { data: after } = await bob.get(`/api/projects/${project.id}`);
-        expect(after.state).toBe('done');
         expect(after.tasks.every((t) => t.state === 'done')).toBe(true);
-        expect(after.history[0]).toMatchObject({
-            taskId: null,
-            field: 'state',
-            newValue: 'done',
-            actor: 'Bob',
-        });
+        expect(after).toMatchObject({ state: 'todo', status: 'in_progress' });
 
         const again = await bob.post(
             `/api/tasks/${open[0].id}/attachments`,
@@ -602,7 +663,10 @@ run('API', () => {
     test('only the super user can delete a project, and it is gone for good', async () => {
         const { data: doomed } = await bob.post('/api/projects', {
             type: 'partial_home',
-            customerName: 'Typo Customer',
+            integratedControls: false,
+            financing: false,
+            customerFirstName: 'Typo',
+            customerLastName: 'Customer',
             address: '0 Nowhere',
             ownerId: bobId,
         });
@@ -640,7 +704,10 @@ run('API', () => {
         ).id;
         const { data: owned } = await boss.post('/api/projects', {
             type: 'partial_home',
-            customerName: 'Dora Customer',
+            integratedControls: false,
+            financing: false,
+            customerFirstName: 'Dora',
+            customerLastName: 'Customer',
             address: '9 Pine St',
             ownerId: doraId,
             note: 'Left by Dora',
@@ -648,7 +715,7 @@ run('API', () => {
         const { data: users } = await boss.get('/api/users');
         expect(users.find((u) => u.id === doraId)).toMatchObject({
             ownedProjects: 1,
-            ownedTasks: 3,
+            ownedTasks: 1,
         });
 
         expect((await bob.del(`/api/users/${doraId}`)).status).toBe(403);
@@ -663,7 +730,7 @@ run('API', () => {
         expect(done.status).toBe(200);
         expect(done.data).toEqual({
             deleted: 'Dora',
-            reassigned: { projects: 1, tasks: 3 },
+            reassigned: { projects: 1, tasks: 1 },
         });
 
         const { data: after } = await boss.get(`/api/projects/${owned.id}`);
@@ -741,6 +808,418 @@ run('API', () => {
         const last = await boss.patch('/api/users/1', { isSuper: false });
         expect(last.status).toBe(400);
         expect(last.data.error).toMatch(/only super user/);
+    });
+
+    function pdfForm() {
+        const body = new FormData();
+        body.append(
+            'files',
+            new Blob([Buffer.from('%PDF-1.4\n')], { type: 'application/pdf' }),
+            'doc.pdf',
+        );
+        return body;
+    }
+
+    test('each project type gets its own documents', async () => {
+        const make = (extra) =>
+            bob.post('/api/projects', {
+                customerFirstName: 'Doc',
+                customerLastName: 'Check',
+                address: '1 Form St',
+                ownerId: bobId,
+                financing: false,
+                ...extra,
+            });
+        const names = (p) => p.tasks.map((t) => [t.name, t.active]);
+
+        const whole = await make({ type: 'whole_home', heatsWithGas: false });
+        expect(names(whole.data)).toEqual([
+            ['Manual J Calculation', true],
+            ['Whole House Rebate Form', true],
+            ['Electric Bill', true],
+            ['Natural Gas Bill', false],
+        ]);
+        const partial = await make({
+            type: 'partial_home',
+            integratedControls: false,
+        });
+        expect(names(partial.data)).toEqual([['Manual J Calculation', true]]);
+        const basic = await make({ type: 'basic_rebate' });
+        expect(basic.data.typeLabel).toBe('Basic Rebate');
+        expect(names(basic.data)).toEqual([['Electric Bill', true]]);
+
+        // Required answers per type.
+        expect((await make({ type: 'whole_home' })).data.error).toMatch(
+            /natural gas/,
+        );
+        expect((await make({ type: 'partial_home' })).data.error).toMatch(
+            /integrated controls/,
+        );
+        expect(
+            (
+                await bob.post('/api/projects', {
+                    type: 'basic_rebate',
+                    customerFirstName: 'X',
+                    address: 'Y',
+                    ownerId: bobId,
+                })
+            ).data.error,
+        ).toMatch(/financing/);
+
+        for (const p of [whole, partial, basic])
+            await boss.del(`/api/projects/${p.data.id}`);
+    });
+
+    test('financing and controls answers are checked and tidied', async () => {
+        const base = {
+            type: 'partial_home',
+            customerFirstName: 'Fin',
+            address: '2 Money St',
+            ownerId: bobId,
+        };
+        const noProvider = await bob.post('/api/projects', {
+            ...base,
+            financing: true,
+            integratedControls: false,
+        });
+        expect(noProvider.data.error).toMatch(/financing provider/);
+        const otherNoName = await bob.post('/api/projects', {
+            ...base,
+            financing: true,
+            financingProvider: 'Other',
+            integratedControls: false,
+        });
+        expect(otherNoName.data.error).toMatch(/provider's name/);
+        const badControls = await bob.post('/api/projects', {
+            ...base,
+            financing: false,
+            integratedControls: true,
+            controlsType: 'Mitsubishi',
+        });
+        expect(badControls.data.error).toMatch(/Ecobee, Flair, Other/);
+
+        const { data } = await bob.post('/api/projects', {
+            ...base,
+            financing: true,
+            financingProvider: 'Other',
+            financingOther: 'Local Credit Union',
+            integratedControls: true,
+            controlsType: 'Ecobee',
+            controlsOther: 'ignored unless Other',
+        });
+        expect(data).toMatchObject({
+            financing: true,
+            financingProvider: 'Other',
+            financingOther: 'Local Credit Union',
+            integratedControls: true,
+            controlsType: 'Ecobee',
+            controlsOther: '',
+            heatsWithGas: null,
+        });
+
+        // Saying "no financing" later clears the provider too, all logged.
+        const { data: edited } = await bob.patch(`/api/projects/${data.id}`, {
+            financing: false,
+        });
+        expect(edited).toMatchObject({
+            financing: false,
+            financingProvider: null,
+            financingOther: '',
+        });
+        expect(edited.history.map((h) => h.field).sort()).toEqual(
+            expect.arrayContaining([
+                'financing',
+                'financing_other',
+                'financing_provider',
+            ]),
+        );
+        expect(
+            edited.history.find((h) => h.field === 'financing').undoable,
+        ).toBe(false);
+        await boss.del(`/api/projects/${data.id}`);
+    });
+
+    test('the natural gas bill follows the heating answer', async () => {
+        const { data: p } = await bob.post('/api/projects', {
+            type: 'whole_home',
+            customerFirstName: 'Gas',
+            address: '3 Furnace Rd',
+            ownerId: bobId,
+            financing: false,
+            heatsWithGas: false,
+        });
+        const gas = p.tasks.find((t) => t.name === 'Natural Gas Bill');
+        expect(gas.active).toBe(false);
+        expect(
+            (await bob.post(`/api/tasks/${gas.id}/attachments`, pdfForm())).data
+                .error,
+        ).toMatch(/isn't needed/);
+        expect(
+            (await bob.get('/api/projects')).data.find((x) => x.id === p.id),
+        ).toMatchObject({ taskTotal: 3, taskDone: 0, status: 'todo' });
+
+        // Switching to gas adds it back (logged on the task). Questions this
+        // type doesn't ask may come along empty.
+        const { data: on } = await bob.patch(`/api/projects/${p.id}`, {
+            heatsWithGas: true,
+            financing: false,
+            integratedControls: null,
+            controlsType: null,
+        });
+        expect(on.tasks.find((t) => t.id === gas.id).active).toBe(true);
+        const { data: gasTask } = await bob.get(`/api/tasks/${gas.id}`);
+        expect(gasTask.history[0]).toMatchObject({
+            field: 'active',
+            newValue: 'true',
+        });
+
+        // Upload the three others: In Progress, not Done (gas is needed).
+        const others = on.tasks.filter((t) => t.id !== gas.id);
+        await bob.post(`/api/tasks/${others[0].id}/attachments`, pdfForm());
+        let { data: now } = await bob.get(`/api/projects/${p.id}`);
+        expect(now.status).toBe('in_progress');
+        for (const t of others.slice(1))
+            await bob.post(`/api/tasks/${t.id}/attachments`, pdfForm());
+        ({ data: now } = await bob.get(`/api/projects/${p.id}`));
+        expect(now.state).toBe('todo');
+
+        // Still missing the gas bill, so it can't be submitted yet.
+        const early = await bob.post(`/api/projects/${p.id}/submit`);
+        expect(early.status).toBe(400);
+        expect(early.data.error).toMatch(/1 still missing/);
+
+        // Switching away from gas drops it, so everything needed is in.
+        ({ data: now } = await bob.patch(`/api/projects/${p.id}`, {
+            heatsWithGas: false,
+        }));
+        expect(now.tasks.find((t) => t.id === gas.id).active).toBe(false);
+        expect((await bob.post(`/api/projects/${p.id}/submit`)).status).toBe(
+            200,
+        );
+
+        // Once submitted, a regular user can't add the gas bill back.
+        const blocked = await bob.patch(`/api/projects/${p.id}`, {
+            heatsWithGas: true,
+        });
+        expect(blocked.status).toBe(403);
+
+        // Switching back (as the super user) brings back the same task and
+        // its upload.
+        const { data: back } = await boss.patch(`/api/projects/${p.id}`, {
+            heatsWithGas: true,
+        });
+        expect(back.tasks.find((t) => t.id === gas.id)).toMatchObject({
+            active: true,
+        });
+        await boss.del(`/api/projects/${p.id}`);
+    });
+
+    test('old projects are moved onto the new document lists', async () => {
+        const { MIGRATIONS } = require('../src/migrations');
+        const { data: p } = await bob.post('/api/projects', {
+            type: 'whole_home',
+            customerFirstName: 'Old',
+            address: '4 Legacy Ln',
+            ownerId: bobId,
+            financing: false,
+            heatsWithGas: true,
+        });
+        // Make it look like it was created with the old forms.
+        await db.query('DELETE FROM tasks WHERE project_id = $1', [p.id]);
+        for (const [letter, name] of [
+            ['a', 'Manual J Calculation'],
+            ['b', 'Load Calc'],
+            ['c', 'Completed Customer Form'],
+            ['d', 'Home Blue Print Document'],
+        ])
+            await db.query(
+                `INSERT INTO tasks (project_id, letter, name, form_name, owner_id)
+                 VALUES ($1, $2, $3, $3, $4)`,
+                [p.id, letter, name, bobId],
+            );
+        const { rows: old } = await db.query(
+            "SELECT id FROM tasks WHERE project_id = $1 AND letter = 'a'",
+            [p.id],
+        );
+        await bob.post(`/api/tasks/${old[0].id}/attachments`, pdfForm());
+
+        await db.transaction((client) => MIGRATIONS.forms_v2(client));
+
+        const { data: after } = await bob.get(`/api/projects/${p.id}`);
+        expect(after.tasks.map((t) => [t.code, t.name, t.active])).toEqual([
+            [`#${p.id}a`, 'Manual J Calculation', true],
+            [`#${p.id}b`, 'Whole House Rebate Form', true],
+            [`#${p.id}c`, 'Electric Bill', true],
+            [`#${p.id}d`, 'Natural Gas Bill', true],
+        ]);
+        // The Manual J upload survived.
+        expect(after.tasks[0]).toMatchObject({ id: old[0].id, state: 'done' });
+        expect(after.status).toBe('in_progress');
+        await boss.del(`/api/projects/${p.id}`);
+    });
+
+    test('submitted, then rebate received, finishes an application', async () => {
+        const { data: p } = await bob.post('/api/projects', {
+            type: 'basic_rebate',
+            customerFirstName: 'Rebate',
+            address: '5 Cash St',
+            ownerId: bobId,
+            financing: false,
+        });
+        expect(p.status).toBe('todo');
+        expect(
+            (
+                await bob.post(`/api/projects/${p.id}/rebate`, {
+                    number: 'R1',
+                    amount: 500,
+                    receivedOn: '2026-11-01',
+                })
+            ).data.error,
+        ).toMatch(/submitted first/);
+
+        await bob.post(`/api/tasks/${p.tasks[0].id}/attachments`, pdfForm());
+        const { data: submitted } = await bob.post(
+            `/api/projects/${p.id}/submit`,
+        );
+        expect(submitted).toMatchObject({
+            state: 'submitted',
+            status: 'submitted',
+        });
+        expect(submitted.submittedAt).toBeTruthy();
+        expect((await bob.post(`/api/projects/${p.id}/submit`)).status).toBe(
+            409,
+        );
+
+        // Checks on the rebate details.
+        const bad = (body) => bob.post(`/api/projects/${p.id}/rebate`, body);
+        expect(
+            (await bad({ amount: 5, receivedOn: '2026-11-01' })).data.error,
+        ).toMatch(/rebate number/);
+        expect(
+            (await bad({ number: 'R1', amount: -5, receivedOn: '2026-11-01' }))
+                .data.error,
+        ).toMatch(/amount/);
+        expect(
+            (await bad({ number: 'R1', amount: 5, receivedOn: '2999-01-01' }))
+                .data.error,
+        ).toMatch(/future/);
+
+        const { data: done } = await bob.post(`/api/projects/${p.id}/rebate`, {
+            number: 'MS-12345',
+            amount: 1250.5,
+            receivedOn: '2026-11-10',
+        });
+        expect(done).toMatchObject({
+            state: 'done',
+            status: 'done',
+            rebateNumber: 'MS-12345',
+            rebateAmount: 1250.5,
+            rebateReceivedOn: '2026-11-10',
+        });
+        expect(done.history[0]).toMatchObject({
+            action: 'rebate',
+            undoable: false,
+        });
+
+        // Done is final for regular users; the super user steps it back.
+        expect((await bob.post(`/api/projects/${p.id}/reopen`)).status).toBe(
+            403,
+        );
+        const { data: reopened } = await boss.post(
+            `/api/projects/${p.id}/reopen`,
+        );
+        expect(reopened).toMatchObject({
+            state: 'submitted',
+            rebateNumber: null,
+        });
+
+        // A rebate number already used elsewhere needs a second look.
+        const { data: other } = await bob.post('/api/projects', {
+            type: 'basic_rebate',
+            customerFirstName: 'Other',
+            address: '6 Cash St',
+            ownerId: bobId,
+            financing: false,
+        });
+        await bob.post(
+            `/api/tasks/${other.tasks[0].id}/attachments`,
+            pdfForm(),
+        );
+        await bob.post(`/api/projects/${other.id}/submit`);
+        await bob.post(`/api/projects/${other.id}/rebate`, {
+            number: 'MS-777',
+            amount: 300,
+            receivedOn: '2026-11-11',
+        });
+        const dup = await bob.post(`/api/projects/${p.id}/rebate`, {
+            number: 'ms-777',
+            amount: 300,
+            receivedOn: '2026-11-11',
+        });
+        expect(dup.status).toBe(409);
+        expect(dup.data).toMatchObject({ duplicateProjectId: other.id });
+        const forced = await bob.post(`/api/projects/${p.id}/rebate`, {
+            number: 'ms-777',
+            amount: 300,
+            receivedOn: '2026-11-11',
+            allowDuplicate: true,
+        });
+        expect(forced.data.state).toBe('done');
+
+        const { data: stats } = await bob.get('/api/stats');
+        expect(stats.projects.done).toBeGreaterThanOrEqual(2);
+        for (const id of [p.id, other.id])
+            await boss.del(`/api/projects/${id}`);
+    });
+
+    test('older "done" projects become Submitted', async () => {
+        const { MIGRATIONS } = require('../src/migrations');
+        const { data: p } = await bob.post('/api/projects', {
+            type: 'basic_rebate',
+            customerFirstName: 'Legacy',
+            address: '7 Old Rd',
+            ownerId: bobId,
+            financing: false,
+        });
+        await db.query(
+            "UPDATE projects SET state = 'done', completed_at = now() WHERE id = $1",
+            [p.id],
+        );
+        await db.transaction((client) => MIGRATIONS.statuses_v2(client));
+        const { data: after } = await bob.get(`/api/projects/${p.id}`);
+        expect(after).toMatchObject({ state: 'submitted', completedAt: null });
+        expect(after.submittedAt).toBeTruthy();
+        await boss.del(`/api/projects/${p.id}`);
+    });
+
+    test('inactive applications are read-only', async () => {
+        const { data: p } = await bob.post('/api/projects', {
+            type: 'basic_rebate',
+            customerFirstName: 'Frozen',
+            address: '8 Ice St',
+            ownerId: bobId,
+            financing: false,
+        });
+        await bob.patch(`/api/projects/${p.id}`, { active: false });
+        const attempts = [
+            bob.patch(`/api/projects/${p.id}`, { address: 'Elsewhere' }),
+            bob.post(`/api/projects/${p.id}/notes`, { body: 'hello' }),
+            bob.patch(`/api/tasks/${p.tasks[0].id}`, { notes: 'x' }),
+            bob.post(`/api/tasks/${p.tasks[0].id}/attachments`, pdfForm()),
+            bob.post(`/api/projects/${p.id}/submit`),
+            boss.patch(`/api/projects/${p.id}`, { address: 'Elsewhere' }),
+        ];
+        for (const res of await Promise.all(attempts)) {
+            expect(res.status).toBe(403);
+            expect(res.data.error).toMatch(/inactive/);
+        }
+        // Reactivating (super user) makes it editable again.
+        await boss.patch(`/api/projects/${p.id}`, { active: true });
+        expect(
+            (await bob.patch(`/api/projects/${p.id}`, { address: 'Elsewhere' }))
+                .status,
+        ).toBe(200);
+        await boss.del(`/api/projects/${p.id}`);
     });
 
     test('deactivated users are signed out', async () => {
