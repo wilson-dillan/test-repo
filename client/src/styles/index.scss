@@ -1564,6 +1564,15 @@ h1,
 }
 
 .danger-zone {
+    .privilege-label {
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: $ws-red;
+        margin-bottom: 0.25rem;
+    }
+
     display: flex;
     align-items: center;
     justify-content: space-between;

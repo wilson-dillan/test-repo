@@ -13,6 +13,7 @@ import {
     faNoteSticky,
     faPen,
     faTrashCan,
+    faUserShield,
 } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../api';
 import { useAuth, useLoad } from '../hooks';
@@ -203,9 +204,7 @@ function ProjectDetail({ project, users, type, options, onUpdate, reload }) {
 
             <Notes project={project} onAdded={reload} />
 
-            {user.isSuper && project.state === 'todo' && (
-                <DeleteProject project={project} />
-            )}
+            {user.isSuper && <DeleteProject project={project} />}
         </>
     );
 }
@@ -554,10 +553,17 @@ function DeleteProject({ project }) {
     return (
         <section className="panel danger-zone">
             <div>
-                <h2>Delete project</h2>
+                <div className="privilege-label">
+                    <FontAwesomeIcon icon={faUserShield} className="me-1" />
+                    Special admin privilege
+                </div>
+                <h2>Delete application</h2>
                 <p className="text-muted mb-0">
-                    Permanently removes this project, its forms, uploaded
-                    documents, notes and history. Only you can see this.
+                    Permanently removes this application, its forms, uploaded
+                    documents, notes and history
+                    {project.state !== 'todo' &&
+                        ', even though it has been submitted'}
+                    . Only admins can see this.
                 </p>
             </div>
             <Button
@@ -565,7 +571,7 @@ function DeleteProject({ project }) {
                 onClick={() => setConfirming(true)}
             >
                 <FontAwesomeIcon icon={faTrashCan} className="me-2" />
-                Delete project
+                Delete application
             </Button>
             <ConfirmModal
                 show={confirming}
@@ -576,13 +582,23 @@ function DeleteProject({ project }) {
                     navigate('/', { replace: true });
                 }}
                 icon={faTrashCan}
-                title={`Delete project #${project.id} (${project.customerName})?`}
+                title={`Delete application #${project.id} (${project.customerName})?`}
                 confirmLabel="Delete forever"
                 confirmVariant="danger"
             >
-                This permanently deletes the project and everything in it,
-                including uploaded documents and history. It can&apos;t be
-                undone or recovered.
+                <p>
+                    <strong>Special admin privilege.</strong> This permanently
+                    deletes the application and everything in it, including
+                    uploaded documents and history. It can&apos;t be undone or
+                    recovered.
+                </p>
+                {project.state !== 'todo' && (
+                    <p className="mb-0">
+                        This application has already been marked submitted
+                        {project.state === 'done' && ' and its rebate recorded'}
+                        . Its record will be gone for everyone.
+                    </p>
+                )}
             </ConfirmModal>
         </section>
     );

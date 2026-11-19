@@ -197,7 +197,7 @@ async function assertDetailsEditable(client, kind, row, fields) {
     if (kind === 'project' && fields.includes('active'))
         throw new HttpError(
             403,
-            "Submitted applications can't be set inactive or deleted.",
+            "Submitted applications can't be set inactive.",
         );
     if (fields.some((f) => !STAGE_FIELDS.has(f)))
         throw new HttpError(403, SUBMITTED_MESSAGE);

@@ -1298,7 +1298,7 @@ run('API', () => {
         expect((await bob.post('/api/reports', pdf)).status).toBe(400);
     });
 
-    test('submitted applications are locked and cannot be deleted', async () => {
+    test('submitted applications are locked; only an admin can delete them', async () => {
         const { data: created } = await bob.post('/api/projects', {
             type: 'basic_rebate',
             financing: false,
@@ -1335,7 +1335,8 @@ run('API', () => {
             for (const r of await Promise.all(tries))
                 expect(r.status).toBe(403);
         }
-        expect((await boss.del(`/api/projects/${id}`)).status).toBe(403);
+        // Only an admin can delete it, as a special privilege.
+        expect((await bob.del(`/api/projects/${id}`)).status).toBe(403);
 
         // Nothing on it shows as undoable, and undoing is refused.
         const { data: detail } = await boss.get(`/api/projects/${id}`);
@@ -1360,7 +1361,8 @@ run('API', () => {
             (await bob.patch(`/api/projects/${id}`, { address: 'Again' }))
                 .status,
         ).toBe(403);
-        expect((await boss.del(`/api/projects/${id}`)).status).toBe(403);
+        expect((await boss.del(`/api/projects/${id}`)).status).toBe(204);
+        expect((await boss.get(`/api/projects/${id}`)).status).toBe(404);
     });
 
     test('deactivated users are signed out', async () => {
