@@ -5,44 +5,26 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
     faBoxArchive,
     faTrashCan,
-    faCircleCheck,
     faLock,
     faRotateLeft,
-    faTriangleExclamation,
 } from '@fortawesome/free-solid-svg-icons';
 import { ConfirmModal } from './ConfirmModal';
 import { StatePill } from './ui';
 import { useAuth } from '../hooks';
 
-// Shows the To Do / Done state with a "Mark as done" button that asks for
-// confirmation, since only the super user can reopen something.
-export function StateControl({
-    state,
-    status,
-    what,
-    onChange,
-    doneHint,
-    autoComplete,
-}) {
+// A task's To Do / Done state. Uploading its document marks it done; the
+// super user can reopen it.
+export function StateControl({ state, what, onChange }) {
     const { user } = useAuth();
-    const [confirming, setConfirming] = useState(null);
+    const [confirming, setConfirming] = useState(false);
 
     return (
         <div className="state-panel">
-            <StatePill state={status || state} />
-            {state === 'todo' && doneHint && (
-                <span className="lock-note">{doneHint}</span>
-            )}
-            {state === 'todo' && !doneHint && !autoComplete && (
-                <Button variant="success" onClick={() => setConfirming('done')}>
-                    <FontAwesomeIcon icon={faCircleCheck} className="me-2" />
-                    Mark as done
-                </Button>
-            )}
+            <StatePill state={state} />
             {state === 'done' && user.isSuper && (
                 <Button
                     variant="outline-secondary"
-                    onClick={() => setConfirming('todo')}
+                    onClick={() => setConfirming(true)}
                 >
                     <FontAwesomeIcon icon={faRotateLeft} className="me-2" />
                     Reopen
@@ -56,20 +38,8 @@ export function StateControl({
             )}
 
             <ConfirmModal
-                show={confirming === 'done'}
-                onHide={() => setConfirming(null)}
-                onConfirm={() => onChange('done')}
-                icon={faTriangleExclamation}
-                title="Are you sure you want to mark this as done?"
-                confirmLabel="Yes, mark as done"
-                confirmVariant="success"
-            >
-                Once this {what} is done, it can&apos;t be undone. Only an admin
-                can reopen it.
-            </ConfirmModal>
-            <ConfirmModal
-                show={confirming === 'todo'}
-                onHide={() => setConfirming(null)}
+                show={confirming}
+                onHide={() => setConfirming(false)}
                 onConfirm={() => onChange('todo')}
                 icon={faRotateLeft}
                 tone="success"
@@ -157,12 +127,6 @@ ActiveControl.propTypes = {
 
 StateControl.propTypes = {
     state: PropTypes.oneOf(['todo', 'done']).isRequired,
-    // what the pill shows, e.g. 'in_progress' for a project
-    status: PropTypes.string,
     what: PropTypes.string.isRequired,
     onChange: PropTypes.func.isRequired,
-    // Shown instead of "Mark as done" when something else completes it.
-    doneHint: PropTypes.string,
-    // Completed by something else (an upload): no "Mark as done" button.
-    autoComplete: PropTypes.bool,
 };

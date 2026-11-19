@@ -246,11 +246,17 @@ async function sendPasswordLink(user, { token, purpose, hours }, sentBy) {
 
 // Lets every super user know that someone asked to reset their password.
 // Never throws.
+// The super users who have an email address, for alerts.
+async function adminEmails() {
+    const { rows } = await db.query(
+        "SELECT email FROM users WHERE is_super AND active AND email IS NOT NULL AND email <> ''",
+    );
+    return rows;
+}
+
 async function notifyResetRequested(user, { linkSent, error }) {
     try {
-        const { rows: supers } = await db.query(
-            "SELECT email FROM users WHERE is_super AND active AND email IS NOT NULL AND email <> ''",
-        );
+        const supers = await adminEmails();
         if (!supers.length || config().problem) {
             console.log(
                 `[email] Reset alert for ${user.username} not sent: no super user email or email is off.`,
@@ -289,9 +295,7 @@ async function notifyResetRequested(user, { linkSent, error }) {
 // Tells the super users about a problem someone reported in the app.
 async function notifyBugReport(report, reporter) {
     try {
-        const { rows: supers } = await db.query(
-            "SELECT email FROM users WHERE is_super AND active AND email IS NOT NULL AND email <> ''",
-        );
+        const supers = await adminEmails();
         if (!supers.length || config().problem) {
             console.log(
                 `[email] Problem report #${report.id} not emailed: no super user email or email is off.`,

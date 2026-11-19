@@ -7,6 +7,13 @@ class HttpError extends Error {
     }
 }
 
+// The numeric :id from a route, or a 404 naming what wasn't found.
+function routeId(req, what) {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) throw new HttpError(404, `${what} not found.`);
+    return id;
+}
+
 function errorHandler(err, req, res, next) {
     if (err instanceof HttpError) {
         return res
@@ -21,4 +28,4 @@ function errorHandler(err, req, res, next) {
     res.status(500).send({ error: 'Something went wrong. Please try again.' });
 }
 
-module.exports = { HttpError, errorHandler };
+module.exports = { HttpError, errorHandler, routeId };

@@ -1,7 +1,7 @@
 const express = require('express');
 const archiver = require('archiver');
 const db = require('../db');
-const { HttpError } = require('../errors');
+const { HttpError, routeId } = require('../errors');
 const { requireSuper } = require('../auth');
 const {
     PROJECT_TYPES,
@@ -42,11 +42,7 @@ const PATCHABLE = {
     controlsOther: 'controls_other',
 };
 
-function projectId(req) {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) throw new HttpError(404, 'Project not found.');
-    return id;
-}
+const projectId = (req) => routeId(req, 'Project');
 
 async function loadProject(id) {
     const { rows } = await db.query(
@@ -396,8 +392,8 @@ router.post('/:id/rebate', async (req, res) => {
     res.send(await loadProjectDetail(id));
 });
 
-// Super user only: steps an application back one stage. Done goes back
-// to Submitted (clearing the rebate); Submitted goes back to To Do.
+// Super user only: steps a Done application back to Submitted, clearing
+// the rebate.
 router.post('/:id/reopen', requireSuper, async (req, res) => {
     const id = projectId(req);
     await db.transaction(async (client) => {
@@ -407,16 +403,12 @@ router.post('/:id/reopen', requireSuper, async (req, res) => {
         );
         if (!rows[0]) throw new HttpError(404, 'Project not found.');
         await assertProjectEditable(client, id);
-        const from = rows[0].state;
-        if (from === 'todo')
-            throw new HttpError(409, "This application isn't submitted yet.");
-        const to = from === 'done' ? 'submitted' : 'todo';
+        if (rows[0].state !== 'done')
+            throw new HttpError(409, "This application isn't marked Done.");
         await client.query(
-            from === 'done'
-                ? `UPDATE projects SET state = 'submitted', completed_at = NULL,
-                       rebate_number = NULL, rebate_amount = NULL, rebate_received_on = NULL
-                   WHERE id = $1`
-                : `UPDATE projects SET state = 'todo', submitted_at = NULL WHERE id = $1`,
+            `UPDATE projects SET state = 'submitted', completed_at = NULL,
+                 rebate_number = NULL, rebate_amount = NULL, rebate_received_on = NULL
+             WHERE id = $1`,
             [id],
         );
         await record(client, {
@@ -424,8 +416,8 @@ router.post('/:id/reopen', requireSuper, async (req, res) => {
             actorId: req.user.id,
             action: 'reopen',
             field: 'state',
-            oldValue: from,
-            newValue: to,
+            oldValue: 'done',
+            newValue: 'submitted',
         });
     });
     res.send(await loadProjectDetail(id));

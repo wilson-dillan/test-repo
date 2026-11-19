@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const { HttpError } = require('../errors');
+const { HttpError, routeId } = require('../errors');
 const { requireSuper } = require('../auth');
 const { notifyBugReport } = require('../mailer');
 const { uploadScreenshot, checkContents } = require('../uploads');
@@ -37,11 +37,7 @@ async function loadReport(id) {
     return toReport(rows[0]);
 }
 
-function reportId(req) {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) throw new HttpError(404, 'Report not found.');
-    return id;
-}
+const reportId = (req) => routeId(req, 'Report');
 
 // Anyone signed in can report a problem, with an optional screenshot
 // (multipart field "screenshot"); the admins are emailed.

@@ -177,6 +177,14 @@ export function describeHistory(entry, withTarget = true) {
 
 // "Manual J Calculation" -> "Manual J Calculation form", but leave names
 // that already say what they are ("Completed Customer Form").
+// Everyone who can own something, plus its current owner if they've since
+// been deactivated (so the dropdown still shows them).
+export function ownerChoices(users, owner) {
+    return users.some((u) => u.id === owner.id)
+        ? users
+        : [...users, { id: owner.id, displayName: owner.name }];
+}
+
 export function formLabel(name) {
     return /\b(form|document|bill)$/i.test(name) ? name : `${name} form`;
 }

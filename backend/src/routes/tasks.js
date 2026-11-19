@@ -1,7 +1,7 @@
 const express = require('express');
 const { v4: uuid } = require('uuid');
 const db = require('../db');
-const { HttpError } = require('../errors');
+const { HttpError, routeId } = require('../errors');
 const {
     applyChanges,
     record,
@@ -16,11 +16,7 @@ const router = express.Router();
 
 const PATCHABLE = { ownerId: 'owner_id', state: 'state', notes: 'notes' };
 
-function taskId(req) {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) throw new HttpError(404, 'Task not found.');
-    return id;
-}
+const taskId = (req) => routeId(req, 'Task');
 
 const TASK_QUERY = `
     SELECT t.*, u.display_name AS owner_name, p.customer_name, p.due_date, p.address,

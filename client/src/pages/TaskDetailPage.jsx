@@ -13,7 +13,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../api';
 import { useAuth, useLoad } from '../hooks';
-import { formLabel, formatDateTime, timeAgo } from '../format';
+import { formLabel, formatDateTime, ownerChoices, timeAgo } from '../format';
 import { AttachmentIcon } from '../components/AttachmentIcon';
 import {
     ACCEPT_ATTRIBUTE,
@@ -87,7 +87,6 @@ function TaskDetail({ task, users, onUpdate }) {
                         state={task.state}
                         what="task"
                         onChange={(state) => update({ state })}
-                        autoComplete
                     />
                 )}
             </div>
@@ -195,9 +194,7 @@ function TaskForm({ task, users, onSave, readOnly, children }) {
         }
     };
 
-    const ownerOptions = users.some((u) => u.id === task.owner.id)
-        ? users
-        : [...users, { id: task.owner.id, displayName: task.owner.name }];
+    const ownerOptions = ownerChoices(users, task.owner);
 
     return (
         <Form onSubmit={save}>

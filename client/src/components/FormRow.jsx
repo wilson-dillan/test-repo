@@ -14,7 +14,7 @@ import {
 import { api } from '../api';
 import { useAuth } from '../hooks';
 import { announceAssignment, useToast } from '../toastContext';
-import { formatDateTime } from '../format';
+import { formatDateTime, ownerChoices } from '../format';
 import { ACCEPT_ATTRIBUTE, checkFiles, isViewable, uploadForm } from './files';
 import { UploadConfirm } from './UploadConfirm';
 
@@ -76,9 +76,7 @@ export function FormRow({
         }
     };
 
-    const ownerOptions = users.some((u) => u.id === task.owner.id)
-        ? users
-        : [...users, { id: task.owner.id, displayName: task.owner.name }];
+    const ownerOptions = ownerChoices(users, task.owner);
 
     const dropHandlers = canUpload && {
         onDragOver: (e) => {

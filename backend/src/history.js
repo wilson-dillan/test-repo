@@ -290,16 +290,6 @@ async function applyChanges(client, kind, id, changes, user) {
             ]),
         );
         Object.assign(pending, normalizeProjectAnswers(row.type, merged));
-        if (
-            pending.heats_with_gas === 'true' &&
-            toText(row.heats_with_gas) !== 'true' &&
-            row.state !== 'todo' &&
-            !user.isSuper
-        )
-            throw new HttpError(
-                403,
-                'This application has already been submitted, and that would add a document to upload. Only an admin can change it.',
-            );
     }
 
     const changed = [];

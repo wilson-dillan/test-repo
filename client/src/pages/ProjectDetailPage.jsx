@@ -16,7 +16,13 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../api';
 import { useAuth, useLoad } from '../hooks';
-import { formatDate, formatDateTime, formatMoney, timeAgo } from '../format';
+import {
+    formatDate,
+    formatDateTime,
+    formatMoney,
+    ownerChoices,
+    timeAgo,
+} from '../format';
 import { FormRow } from '../components/FormRow';
 import { ProjectQuestions } from '../components/ProjectQuestions';
 import {
@@ -273,10 +279,7 @@ function ProjectForm({ project, users, type, options, onSave, onCancel }) {
         }
     };
 
-    // The owner list includes the current owner even if deactivated.
-    const ownerOptions = users.some((u) => u.id === project.owner.id)
-        ? users
-        : [...users, { id: project.owner.id, displayName: project.owner.name }];
+    const ownerOptions = ownerChoices(users, project.owner);
 
     return (
         <Form className="panel" onSubmit={save}>
