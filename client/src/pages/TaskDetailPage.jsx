@@ -59,8 +59,10 @@ function TaskDetail({ task, users, onUpdate }) {
         notifyChange();
     };
 
-    // Tasks of an inactive application are read-only.
+    // Tasks of an inactive application are read-only; once the application
+    // is submitted, the owner and notes are fixed.
     const locked = task.projectActive === false;
+    const detailsLocked = locked || task.projectState !== 'todo';
     const uploading = !locked && task.state === 'todo' && task.active;
     const hasFiles = task.attachments.length > 0;
     const files = (
@@ -120,7 +122,7 @@ function TaskDetail({ task, users, onUpdate }) {
                             task={task}
                             users={users}
                             onSave={update}
-                            readOnly={locked}
+                            readOnly={detailsLocked}
                         >
                             <div className="field-list mb-3">
                                 <ReadField label="Project">
@@ -235,7 +237,7 @@ function TaskForm({ task, users, onSave, readOnly, children }) {
                         {error}
                     </Alert>
                 )}
-                <div className="save-bar">
+                <div className="save-bar" hidden={readOnly}>
                     <span className="hint">{dirty && 'Unsaved changes'}</span>
                     <Button
                         variant="light"

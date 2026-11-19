@@ -166,7 +166,9 @@ async function record(client, entry) {
 // changed field. Only the super user may move something from Done back to
 // To Do. Returns the changed fields.
 const INACTIVE_MESSAGE =
-    "This application is inactive, so it can't be edited. Only an admin can reactivate it.";
+    "This application is inactive, so it can't be edited. Reactivate it first.";
+const SUBMITTED_MESSAGE =
+    "This application has been submitted, so its details can't be changed.";
 
 // Throws if the project is inactive (read-only).
 async function assertProjectEditable(client, projectId) {
@@ -175,6 +177,30 @@ async function assertProjectEditable(client, projectId) {
         [projectId],
     );
     if (rows[0] && !rows[0].active) throw new HttpError(403, INACTIVE_MESSAGE);
+}
+
+// Once submitted (or Done), an application's details are fixed: its
+// customer details, answers, due date, and who owns each task. Moving
+// through the stages and uploading documents is still allowed.
+const STAGE_FIELDS = new Set(['state']);
+async function assertDetailsEditable(client, kind, row, fields) {
+    const projectState =
+        kind === 'project'
+            ? row.state
+            : (
+                  await client.query(
+                      'SELECT state FROM projects WHERE id = $1',
+                      [row.project_id],
+                  )
+              ).rows[0]?.state;
+    if (projectState === 'todo') return;
+    if (kind === 'project' && fields.includes('active'))
+        throw new HttpError(
+            403,
+            "Submitted applications can't be set inactive or deleted.",
+        );
+    if (fields.some((f) => !STAGE_FIELDS.has(f)))
+        throw new HttpError(403, SUBMITTED_MESSAGE);
 }
 
 // Cross-field rules for a project's questions. `values` holds every field
@@ -233,13 +259,13 @@ const ANSWER_FIELDS = [
 
 // Validates and applies field changes, recording one history entry per
 // changed field. Only the super user may move something from Done back to
-// To Do, or reactivate a project. Returns the changed fields.
+// To Do. Returns the changed fields.
 async function applyChanges(client, kind, id, changes, user) {
     const row = await lockRow(client, kind, id);
     const fields = EDITABLE_FIELDS[kind];
 
-    // An inactive project is read-only; the only change allowed is the
-    // super user reactivating it.
+    // An inactive project is read-only; the only change allowed is
+    // reactivating it.
     const onlyReactivating =
         kind === 'project' && Object.keys(changes || {}).join() === 'active';
     if (!onlyReactivating)
@@ -291,13 +317,15 @@ async function applyChanges(client, kind, id, changes, user) {
                     ? 'This is marked done. Only an admin can reopen it.'
                     : 'This has been submitted. Only an admin can move it back.',
             );
-        if (field === 'active' && oldValue === 'false' && !user.isSuper)
-            throw new HttpError(
-                403,
-                'This project is inactive. Only an admin can reactivate it.',
-            );
         changed.push({ field, oldValue, newValue });
     }
+    if (changed.length)
+        await assertDetailsEditable(
+            client,
+            kind,
+            row,
+            changed.map((c) => c.field),
+        );
 
     if (changed.length) {
         await writeFields(
@@ -382,6 +410,7 @@ async function undo(client, historyId, user) {
     const row = await lockRow(client, kind, id);
     if (!(kind === 'project' && entry.field === 'active'))
         await assertProjectEditable(client, entry.project_id);
+    await assertDetailsEditable(client, kind, row, [entry.field]);
     if (toText(row[entry.field]) !== entry.new_value)
         throw new HttpError(
             409,
@@ -413,7 +442,8 @@ async function undo(client, historyId, user) {
 async function listHistory(where, params, limit = 200) {
     const { rows } = await db.query(
         `SELECT h.*, a.display_name AS actor_name, u.display_name AS undone_by_name,
-                t.letter, t.name AS task_name, p.customer_name
+                t.letter, t.name AS task_name, p.customer_name,
+                p.state AS project_state, p.active AS project_active
          FROM history h
          JOIN projects p ON p.id = h.project_id
          LEFT JOIN tasks t ON t.id = h.task_id
@@ -461,14 +491,18 @@ async function listHistory(where, params, limit = 200) {
         undoneBy: row.undone_by_name || (row.undone_at && 'Deleted user'),
         undoneAt: row.undone_at,
         // Answers that clear or depend on others are changed on the project
-        // page instead of being undone one by one.
+        // page instead of being undone one by one. Nothing on a submitted
+        // or inactive application can be undone, except reactivating it.
         undoable:
             row.action === 'update' &&
             !row.undone_at &&
             !ANSWER_FIELDS.includes(row.field) &&
             Boolean(
                 EDITABLE_FIELDS[row.task_id ? 'task' : 'project'][row.field],
-            ),
+            ) &&
+            (row.field === 'active' && !row.task_id
+                ? !row.project_active && row.project_state === 'todo'
+                : row.project_active && row.project_state === 'todo'),
     }));
 }
 
@@ -480,5 +514,6 @@ module.exports = {
     syncTasks,
     normalizeProjectAnswers,
     assertProjectEditable,
+    assertDetailsEditable,
     EDITABLE_FIELDS,
 };

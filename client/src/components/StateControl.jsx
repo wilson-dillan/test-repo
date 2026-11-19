@@ -4,6 +4,7 @@ import Button from 'react-bootstrap/Button';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
     faBoxArchive,
+    faTrashCan,
     faCircleCheck,
     faLock,
     faRotateLeft,
@@ -81,23 +82,26 @@ export function StateControl({
     );
 }
 
-// "Set inactive" for projects. Inactive projects stay listed everywhere;
-// like Done, only the super user can turn this back.
-export function ActiveControl({ active, onChange }) {
-    const { user } = useAuth();
+// A red trash can for projects. Nothing is ever deleted: the popup
+// explains that discarding means setting the application inactive.
+// Inactive projects stay listed everywhere and anyone can reactivate them.
+// `canDiscard` is false once the application has been submitted.
+export function ActiveControl({ active, canDiscard, onChange }) {
     const [confirming, setConfirming] = useState(null);
 
-    if (!active && !user.isSuper) return null;
+    if (active && !canDiscard) return null;
 
     return (
         <>
             {active ? (
                 <Button
-                    variant="outline-secondary"
+                    variant="outline-danger"
+                    className="btn-discard"
                     onClick={() => setConfirming('inactive')}
+                    title="Discard application"
+                    aria-label="Discard application"
                 >
-                    <FontAwesomeIcon icon={faBoxArchive} className="me-2" />
-                    Set inactive
+                    <FontAwesomeIcon icon={faTrashCan} />
                 </Button>
             ) : (
                 <Button
@@ -113,19 +117,20 @@ export function ActiveControl({ active, onChange }) {
                 onHide={() => setConfirming(null)}
                 onConfirm={() => onChange(false)}
                 icon={faBoxArchive}
-                title="Mark this application as inactive?"
-                confirmLabel="Yes, mark inactive"
-                confirmVariant="secondary"
+                title="Applications can't be deleted"
+                confirmLabel="Set as inactive"
+                confirmVariant="danger"
             >
                 <p>
-                    <strong>This can&apos;t be undone.</strong> An inactive
-                    application can no longer be edited: no uploads, notes,
-                    reassignments or changes. It stays listed with an Inactive
-                    label. Only an admin can reactivate it.
+                    <strong>
+                        To discard an application, you must set it as inactive.
+                    </strong>{' '}
+                    Nothing is deleted: it stays listed with an Inactive label.
                 </p>
                 <p className="mb-0">
-                    Note: applications can&apos;t be deleted once created.
-                    Marking one inactive is how you set it aside.
+                    An inactive application can&apos;t be edited: no uploads,
+                    notes, reassignments or changes. You can reactivate it later
+                    if you need it again.
                 </p>
             </ConfirmModal>
             <ConfirmModal
@@ -134,11 +139,11 @@ export function ActiveControl({ active, onChange }) {
                 onConfirm={() => onChange(true)}
                 icon={faRotateLeft}
                 tone="success"
-                title="Reactivate this project?"
+                title="Reactivate this application?"
                 confirmLabel="Reactivate"
             >
-                It goes back to being a normal, active project. This is recorded
-                in the history.
+                It goes back to being a normal, active application. This is
+                recorded in the history.
             </ConfirmModal>
         </>
     );
@@ -146,6 +151,7 @@ export function ActiveControl({ active, onChange }) {
 
 ActiveControl.propTypes = {
     active: PropTypes.bool.isRequired,
+    canDiscard: PropTypes.bool.isRequired,
     onChange: PropTypes.func.isRequired,
 };
 

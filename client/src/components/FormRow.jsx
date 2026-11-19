@@ -21,8 +21,16 @@ import { UploadConfirm } from './UploadConfirm';
 // One form the project needs: who it's assigned to, and either an Upload
 // button or a link to view the uploaded document. Files can also be
 // dropped onto the row.
-// `readOnly` (inactive applications) shows the row without any actions.
-export function FormRow({ task, customerName, users, onChanged, readOnly }) {
+// `readOnly` (inactive applications) shows the row without any actions;
+// `detailsLocked` (submitted applications) fixes who it's assigned to.
+export function FormRow({
+    task,
+    customerName,
+    users,
+    onChanged,
+    readOnly,
+    detailsLocked,
+}) {
     const { user, notifyChange } = useAuth();
     const showToast = useToast();
     const input = useRef(null);
@@ -138,7 +146,12 @@ export function FormRow({ task, customerName, users, onChanged, readOnly }) {
                     size="sm"
                     value={task.owner.id}
                     onChange={reassign}
-                    disabled={savingOwner || readOnly}
+                    disabled={savingOwner || readOnly || detailsLocked}
+                    title={
+                        detailsLocked
+                            ? "Owners can't change after the application is submitted."
+                            : undefined
+                    }
                 >
                     {ownerOptions.map((u) => (
                         <option key={u.id} value={u.id}>
@@ -223,4 +236,6 @@ FormRow.propTypes = {
     users: PropTypes.array.isRequired,
     onChanged: PropTypes.func.isRequired,
     readOnly: PropTypes.bool,
+    // Submitted: the owner can't be changed.
+    detailsLocked: PropTypes.bool,
 };

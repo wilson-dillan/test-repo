@@ -262,13 +262,21 @@ router.get('/:id', async (req, res) => {
 });
 
 // Permanently deletes a project with its tasks, documents, notes and
-// history (all cascade). Super user only; regular users can only set a
-// project inactive.
+// history (all cascade). Super user only, and only before it's submitted;
+// regular users can only set a project inactive.
 router.delete('/:id', requireSuper, async (req, res) => {
-    const { rowCount } = await db.query('DELETE FROM projects WHERE id = $1', [
-        projectId(req),
-    ]);
-    if (!rowCount) throw new HttpError(404, 'Project not found.');
+    const id = projectId(req);
+    const { rows } = await db.query(
+        'SELECT state FROM projects WHERE id = $1',
+        [id],
+    );
+    if (!rows[0]) throw new HttpError(404, 'Project not found.');
+    if (rows[0].state !== 'todo')
+        throw new HttpError(
+            403,
+            "Submitted applications can't be set inactive or deleted.",
+        );
+    await db.query('DELETE FROM projects WHERE id = $1', [id]);
     res.sendStatus(204);
 });
 

@@ -63,6 +63,7 @@ function toTask(row) {
             customerName: row.customer_name,
             dueDate: row.due_date,
             projectActive: row.project_active,
+            projectState: row.project_state,
         }),
         ...(row.attachment_count !== undefined && {
             attachmentCount: Number(row.attachment_count),

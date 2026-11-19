@@ -563,7 +563,7 @@ run('API', () => {
         expect(data[0]).toMatchObject({ taskCode: '#1b', field: 'state' });
     });
 
-    test('inactive projects stay listed and only the super user reactivates', async () => {
+    test('inactive projects stay listed and anyone can reactivate them', async () => {
         const second = await bob.post('/api/projects', {
             type: 'partial_home',
             integratedControls: false,
@@ -599,10 +599,6 @@ run('API', () => {
         const stats = await bob.get('/api/stats');
         expect(stats.data.projects).toMatchObject({ open: 1, inactive: 1 });
 
-        const back = await bob.patch(`/api/projects/${second.data.id}`, {
-            active: true,
-        });
-        expect(back.status).toBe(403);
         expect(
             (
                 await bob.patch(`/api/projects/${second.data.id}`, {
@@ -611,10 +607,10 @@ run('API', () => {
             ).status,
         ).toBe(400);
 
-        const superBack = await boss.patch(`/api/projects/${second.data.id}`, {
+        const back = await bob.patch(`/api/projects/${second.data.id}`, {
             active: true,
         });
-        expect(superBack.data.active).toBe(true);
+        expect(back.data.active).toBe(true);
     });
 
     test('uploading every form makes it ready to submit; done forms are locked', async () => {
@@ -988,30 +984,32 @@ run('API', () => {
         expect(early.status).toBe(400);
         expect(early.data.error).toMatch(/1 still missing/);
 
-        // Switching away from gas drops it, so everything needed is in.
+        // Switching away from gas drops it; switching back brings back the
+        // same task.
         ({ data: now } = await bob.patch(`/api/projects/${p.id}`, {
             heatsWithGas: false,
         }));
         expect(now.tasks.find((t) => t.id === gas.id).active).toBe(false);
-        expect((await bob.post(`/api/projects/${p.id}/submit`)).status).toBe(
-            200,
-        );
-
-        // Once submitted, a regular user can't add the gas bill back.
-        const blocked = await bob.patch(`/api/projects/${p.id}`, {
-            heatsWithGas: true,
-        });
-        expect(blocked.status).toBe(403);
-
-        // Switching back (as the super user) brings back the same task and
-        // its upload.
-        const { data: back } = await boss.patch(`/api/projects/${p.id}`, {
+        const { data: back } = await bob.patch(`/api/projects/${p.id}`, {
             heatsWithGas: true,
         });
         expect(back.tasks.find((t) => t.id === gas.id)).toMatchObject({
             active: true,
         });
-        await boss.del(`/api/projects/${p.id}`);
+
+        // Without gas, everything needed is in.
+        await bob.patch(`/api/projects/${p.id}`, { heatsWithGas: false });
+        expect((await bob.post(`/api/projects/${p.id}/submit`)).status).toBe(
+            200,
+        );
+
+        // Once submitted, nobody can change the answers.
+        for (const who of [bob, boss]) {
+            const blocked = await who.patch(`/api/projects/${p.id}`, {
+                heatsWithGas: true,
+            });
+            expect(blocked.status).toBe(403);
+        }
     });
 
     test('old projects are moved onto the new document lists', async () => {
@@ -1298,6 +1296,71 @@ run('API', () => {
         pdf.append('description', 'Wrong type');
         pdf.append('screenshot', new Blob(['%PDF-1.4']), 'shot.pdf');
         expect((await bob.post('/api/reports', pdf)).status).toBe(400);
+    });
+
+    test('submitted applications are locked and cannot be deleted', async () => {
+        const { data: created } = await bob.post('/api/projects', {
+            type: 'basic_rebate',
+            financing: false,
+            customerFirstName: 'Locked',
+            customerLastName: 'App',
+            address: '1 Lock St',
+            ownerId: bobId,
+        });
+        const task = created.tasks[0];
+        const form = new FormData();
+        form.append(
+            'files',
+            new Blob([Buffer.from('%PDF-1.4\n')], { type: 'application/pdf' }),
+            'bill.pdf',
+        );
+        await bob.post(`/api/tasks/${task.id}/attachments`, form);
+        // Reassigning before submitting is recorded and undoable.
+        await bob.patch(`/api/tasks/${task.id}`, { ownerId: aliceId });
+        await bob.patch(`/api/tasks/${task.id}`, { ownerId: bobId });
+        expect(
+            (await bob.post(`/api/projects/${created.id}/submit`)).status,
+        ).toBe(200);
+
+        const id = created.id;
+        for (const who of [bob, boss]) {
+            const tries = [
+                who.patch(`/api/projects/${id}`, { address: 'New St' }),
+                who.patch(`/api/projects/${id}`, { customerFirstName: 'X' }),
+                who.patch(`/api/projects/${id}`, { dueDate: '2030-01-01' }),
+                who.patch(`/api/tasks/${task.id}`, { ownerId: aliceId }),
+                who.patch(`/api/tasks/${task.id}`, { notes: 'changed' }),
+                who.patch(`/api/projects/${id}`, { active: false }),
+            ];
+            for (const r of await Promise.all(tries))
+                expect(r.status).toBe(403);
+        }
+        expect((await boss.del(`/api/projects/${id}`)).status).toBe(403);
+
+        // Nothing on it shows as undoable, and undoing is refused.
+        const { data: detail } = await boss.get(`/api/projects/${id}`);
+        expect(detail.history.some((h) => h.undoable)).toBe(false);
+        const owner = detail.history.find((h) => h.field === 'owner_id');
+        expect((await boss.post(`/api/activity/${owner.id}/undo`)).status).toBe(
+            403,
+        );
+
+        // Notes and the rebate still work.
+        expect(
+            (await bob.post(`/api/projects/${id}/notes`, { body: 'Sent' }))
+                .status,
+        ).toBe(201);
+        const done = await bob.post(`/api/projects/${id}/rebate`, {
+            number: 'LOCK-1',
+            amount: 100,
+            receivedOn: '2026-11-18',
+        });
+        expect(done.data.status).toBe('done');
+        expect(
+            (await bob.patch(`/api/projects/${id}`, { address: 'Again' }))
+                .status,
+        ).toBe(403);
+        expect((await boss.del(`/api/projects/${id}`)).status).toBe(403);
     });
 
     test('deactivated users are signed out', async () => {

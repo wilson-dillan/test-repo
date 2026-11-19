@@ -8,10 +8,11 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
     faArrowUpRightFromSquare,
     faDownload,
+    faFolderOpen,
+    faLock,
+    faNoteSticky,
     faPen,
     faTrashCan,
-    faFolderOpen,
-    faNoteSticky,
 } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../api';
 import { useAuth, useLoad } from '../hooks';
@@ -114,6 +115,7 @@ function ProjectDetail({ project, users, type, options, onUpdate, reload }) {
                 <div className="d-flex flex-wrap align-items-center gap-3">
                     <ActiveControl
                         active={project.active}
+                        canDiscard={project.state === 'todo'}
                         onChange={(active) => update({ active })}
                     />
                     <StageControl project={project} onChanged={onUpdate} />
@@ -187,6 +189,7 @@ function ProjectDetail({ project, users, type, options, onUpdate, reload }) {
                                 users={users}
                                 onChanged={reload}
                                 readOnly={!project.active}
+                                detailsLocked={project.state !== 'todo'}
                             />
                         ))}
                 </div>
@@ -194,7 +197,9 @@ function ProjectDetail({ project, users, type, options, onUpdate, reload }) {
 
             <Notes project={project} onAdded={reload} />
 
-            {user.isSuper && <DeleteProject project={project} />}
+            {user.isSuper && project.state === 'todo' && (
+                <DeleteProject project={project} />
+            )}
         </>
     );
 }
@@ -385,7 +390,13 @@ function ProjectDetailsCard({ project, users, type, options, onSave }) {
         <section className="panel">
             <div className="panel-title">
                 <h2>Project details</h2>
-                {project.active && (
+                {project.active && project.state !== 'todo' && (
+                    <span className="locked-note">
+                        <FontAwesomeIcon icon={faLock} className="me-1" />
+                        Locked after submitting
+                    </span>
+                )}
+                {project.active && project.state === 'todo' && (
                     <Button
                         variant="outline-primary"
                         size="sm"

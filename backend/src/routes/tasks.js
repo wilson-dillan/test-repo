@@ -24,7 +24,7 @@ function taskId(req) {
 
 const TASK_QUERY = `
     SELECT t.*, u.display_name AS owner_name, p.customer_name, p.due_date, p.address,
-           p.active AS project_active,
+           p.active AS project_active, p.state AS project_state,
            (SELECT count(*) FROM attachments a WHERE a.task_id = t.id) AS attachment_count
     FROM tasks t
     JOIN users u ON u.id = t.owner_id

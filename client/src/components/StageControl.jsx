@@ -12,6 +12,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { api } from '../api';
 import { useAuth } from '../hooks';
+import { useToast } from '../toastContext';
 import { formatDate, formatMoney } from '../format';
 import { ConfirmModal } from './ConfirmModal';
 import { ProjectStatusPill } from './ui';
@@ -20,6 +21,7 @@ import { ProjectStatusPill } from './ui';
 // To Do / In Progress -> "Mark as submitted" -> "Rebate Received" -> Done.
 export function StageControl({ project, onChanged }) {
     const { user, notifyChange } = useAuth();
+    const showToast = useToast();
     const [dialog, setDialog] = useState(null);
     const missing = project.tasks.filter(
         (t) => t.active && t.state === 'todo',
@@ -80,7 +82,10 @@ export function StageControl({ project, onChanged }) {
             <ConfirmModal
                 show={dialog === 'submit'}
                 onHide={() => setDialog(null)}
-                onConfirm={() => act('submit')}
+                onConfirm={async () => {
+                    await act('submit');
+                    showToast('Application marked submitted');
+                }}
                 icon={faPaperPlane}
                 tone="success"
                 title="Mark this application as submitted?"
@@ -110,6 +115,7 @@ export function StageControl({ project, onChanged }) {
                     onChanged(updated);
                     notifyChange();
                     setDialog(null);
+                    showToast('Success');
                 }}
             />
         </div>
