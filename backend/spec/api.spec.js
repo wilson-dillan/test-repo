@@ -410,22 +410,40 @@ run('API', () => {
         });
     });
 
-    test('Done is final for regular users', async () => {
-        const done = await alice.patch(`/api/tasks/${taskA.id}`, {
-            state: 'done',
+    test('a task is done exactly when its document is uploaded', async () => {
+        const { data: other } = await alice.post('/api/projects', {
+            type: 'basic_rebate',
+            financing: false,
+            customerFirstName: 'Done',
+            customerLastName: 'Rule',
+            address: '1 Rule St',
+            ownerId: aliceId,
         });
-        expect(done.data.state).toBe('done');
-        expect(done.data.completedAt).toBeTruthy();
+        const task = other.tasks[0];
+        for (const state of ['done', 'todo']) {
+            const res = await boss.patch(`/api/tasks/${task.id}`, { state });
+            expect(res.status).toBe(400);
+        }
+        const { data: done } = await alice.post(
+            `/api/tasks/${task.id}/attachments`,
+            pdfForm(),
+        );
+        expect(done.state).toBe('done');
+        expect(done.completedAt).toBeTruthy();
 
-        const reopen = await alice.patch(`/api/tasks/${taskA.id}`, {
-            state: 'todo',
-        });
-        expect(reopen.status).toBe(403);
+        // Completing it can't be undone on its own: the document would stay.
+        const entry = done.history.find((h) => h.field === 'state');
+        expect(entry.undoable).toBe(false);
+        expect((await boss.post(`/api/activity/${entry.id}/undo`)).status).toBe(
+            400,
+        );
+        await boss.del(`/api/projects/${other.id}`);
     });
 
     test('only the super user can undo', async () => {
+        await alice.patch(`/api/tasks/${taskA.id}`, { notes: 'Call first' });
         const { data: task } = await alice.get(`/api/tasks/${taskA.id}`);
-        const doneEntry = task.history.find((h) => h.field === 'state');
+        const doneEntry = task.history.find((h) => h.field === 'notes');
 
         expect(
             (await alice.post(`/api/activity/${doneEntry.id}/undo`)).status,
@@ -435,12 +453,11 @@ run('API', () => {
         expect(undo.status).toBe(200);
 
         const { data: after } = await alice.get(`/api/tasks/${taskA.id}`);
-        expect(after.state).toBe('todo');
-        expect(after.completedAt).toBeNull();
+        expect(after.notes).toBe('');
         expect(after.history[0]).toMatchObject({
             action: 'undo',
             actor: 'The Boss',
-            newValue: 'todo',
+            newValue: '',
         });
         expect(after.history.find((h) => h.id === doneEntry.id)).toMatchObject({
             undone: true,
@@ -547,7 +564,10 @@ run('API', () => {
     });
 
     test('dashboard stats', async () => {
-        await bob.patch(`/api/tasks/${project.tasks[1].id}`, { state: 'done' });
+        await bob.post(
+            `/api/tasks/${project.tasks[1].id}/attachments`,
+            pdfForm(),
+        );
         const { data } = await bob.get('/api/stats');
         expect(data.tasks).toEqual({ total: 4, done: 2 });
         expect(data.tasksPerUser.find((u) => u.name === 'Bob')).toMatchObject({

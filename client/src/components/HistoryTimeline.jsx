@@ -114,7 +114,7 @@ function HistoryItem({ entry, showTarget, linkTarget, onUndo }) {
                                 icon={faRotateLeft}
                                 className="me-1"
                             />
-                            Undo
+                            Undo (admin only)
                         </Button>
                     )}
                 </div>

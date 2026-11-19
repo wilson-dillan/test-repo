@@ -82,6 +82,17 @@ MIGRATIONS.statuses_v2 = async (client) => {
     );
 };
 
+// Undo/Reopen used to move a task back to To Do while its document stayed
+// attached. A task with a document is done.
+MIGRATIONS.tasks_with_documents_done = async (client) => {
+    await client.query(
+        `UPDATE tasks t SET state = 'done', completed_at = COALESCE(completed_at,
+             (SELECT max(created_at) FROM attachments a WHERE a.task_id = t.id))
+         WHERE state = 'todo'
+           AND EXISTS (SELECT 1 FROM attachments a WHERE a.task_id = t.id)`,
+    );
+};
+
 async function runMigrations(transaction) {
     for (const [name, migrate] of Object.entries(MIGRATIONS)) {
         await transaction(async (client) => {

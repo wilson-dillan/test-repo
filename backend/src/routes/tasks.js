@@ -14,7 +14,8 @@ const { toTask, toAttachment } = require('../serializers');
 
 const router = express.Router();
 
-const PATCHABLE = { ownerId: 'owner_id', state: 'state', notes: 'notes' };
+// A task's state isn't edited directly: uploading its document completes it.
+const PATCHABLE = { ownerId: 'owner_id', notes: 'notes' };
 
 const taskId = (req) => routeId(req, 'Task');
 

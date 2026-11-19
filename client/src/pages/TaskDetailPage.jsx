@@ -24,7 +24,6 @@ import {
 import { announceAssignment, useToast } from '../toastContext';
 import { UploadConfirm } from '../components/UploadConfirm';
 import { HistoryTimeline } from '../components/HistoryTimeline';
-import { StateControl } from '../components/StateControl';
 import {
     BackLink,
     DueDate,
@@ -33,6 +32,7 @@ import {
     LoadError,
     PageLoader,
     ReadField,
+    StatePill,
 } from '../components/ui';
 
 export function TaskDetailPage() {
@@ -82,13 +82,7 @@ function TaskDetail({ task, users, onUpdate }) {
                     </div>
                     <h1>{task.name}</h1>
                 </div>
-                {!locked && (
-                    <StateControl
-                        state={task.state}
-                        what="task"
-                        onChange={(state) => update({ state })}
-                    />
-                )}
+                <StatePill state={task.state} />
             </div>
 
             {!task.active && (

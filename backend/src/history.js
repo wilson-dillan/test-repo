@@ -392,6 +392,11 @@ async function undo(client, historyId, user) {
             400,
             "Change this answer on the project page instead; it can't be undone on its own.",
         );
+    if (entry.task_id && entry.field === 'state')
+        throw new HttpError(
+            400,
+            'A task is done once its document is uploaded. To fix a wrong upload, replace the document.',
+        );
     if (entry.undone_at)
         throw new HttpError(409, 'This change was already undone.');
 
@@ -487,6 +492,7 @@ async function listHistory(where, params, limit = 200) {
             row.action === 'update' &&
             !row.undone_at &&
             !ANSWER_FIELDS.includes(row.field) &&
+            !(row.task_id && row.field === 'state') &&
             Boolean(
                 EDITABLE_FIELDS[row.task_id ? 'task' : 'project'][row.field],
             ) &&
