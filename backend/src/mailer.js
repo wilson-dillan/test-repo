@@ -210,7 +210,7 @@ function formatTime(date, withDay = false) {
 
 // A simple branded email: heading, paragraphs, one big button with the
 // link spelled out underneath for mail apps that block buttons.
-function emailLayout({ heading, paragraphs, button, footer }) {
+function emailLayout({ heading, paragraphs, button, buttonNote, footer }) {
     const p = (text) =>
         `<p style="margin:0 0 14px;font-size:15px;line-height:1.5;color:#17233a">${text}</p>`;
     return `<div style="background:#f1f4f9;padding:24px 12px;font-family:Arial,Helvetica,sans-serif">
@@ -219,7 +219,8 @@ function emailLayout({ heading, paragraphs, button, footer }) {
 <tr><td style="padding:24px">
 <h1 style="margin:0 0 16px;font-size:20px;color:#17233a">${heading}</h1>
 ${paragraphs.map(p).join('\n')}
-<p style="margin:22px 0"><a href="${escapeHtml(button.url)}" style="display:inline-block;padding:12px 22px;background:#05438f;color:#ffffff;border-radius:6px;text-decoration:none;font-weight:bold;font-size:15px">${escapeHtml(button.label)}</a></p>
+${buttonNote ? `<p style="margin:18px 0 0;font-size:13px;color:#5c6b80">${buttonNote}</p>` : ''}
+<p style="margin:${buttonNote ? '8px' : '22px'} 0 22px"><a href="${escapeHtml(button.url)}" style="display:inline-block;padding:12px 22px;background:#05438f;color:#ffffff;border-radius:6px;text-decoration:none;font-weight:bold;font-size:15px">${escapeHtml(button.label)}</a></p>
 <p style="margin:0 0 14px;font-size:13px;color:#5c6b80">Button not working? Copy this link into your browser:<br><a href="${escapeHtml(button.url)}" style="color:#05438f;word-break:break-all">${escapeHtml(button.url)}</a></p>
 <p style="margin:18px 0 0;padding-top:14px;border-top:1px solid #e1e7ef;font-size:13px;line-height:1.5;color:#5c6b80">${footer}</p>
 </td></tr></table></div>`;
@@ -263,14 +264,15 @@ async function sendPasswordLink(user, { token, purpose, hours }, sentBy) {
         await send({
             to: user.email,
             subject: invite
-                ? `You're invited to the Wilson Services tracker (sent ${sentAt} · ref ${ref})`
-                : `Reset your Wilson Services password (requested ${sentAt} · ref ${ref})`,
+                ? "You're invited to the Wilson Services tracker"
+                : 'Reset your Wilson Services password',
             text: [
                 `Hi ${user.display_name},`,
                 '',
                 intro,
                 `Your username is: ${user.username}`,
                 '',
+                `${invite ? 'Sent' : 'Requested'} ${sentAt} · reference ${ref}`,
                 `${action}: ${url}`,
                 '',
                 ...(invite
@@ -297,7 +299,10 @@ async function sendPasswordLink(user, { token, purpose, hours }, sentBy) {
                         : []),
                 ],
                 button: { label: action, url },
-                footer: `Sent ${escapeHtml(sentAt)} · reference ${ref}. This link expires at <strong>${escapeHtml(expiresAt)}</strong> (${expiry}). ${escapeHtml(usedNote)}${ignore ? `<br>${escapeHtml(ignore)}` : ''}`,
+                // Different in every email, right next to the button, so
+                // Gmail doesn't treat this part as repeated and hide it.
+                buttonNote: `${invite ? 'Sent' : 'Requested'} ${escapeHtml(sentAt)} · reference ${ref}`,
+                footer: `This link expires at <strong>${escapeHtml(expiresAt)}</strong> (${expiry}). ${escapeHtml(usedNote)}${ignore ? `<br>${escapeHtml(ignore)}` : ''}`,
             }),
         });
         console.log(
