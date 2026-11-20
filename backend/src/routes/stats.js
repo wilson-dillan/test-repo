@@ -4,7 +4,7 @@ const db = require('../db');
 const router = express.Router();
 
 const WEEKS = 12;
-const TIME_ZONE = process.env.APP_TIMEZONE || 'UTC';
+const TIME_ZONE = process.env.APP_TIMEZONE || 'America/New_York';
 
 router.get('/', async (req, res) => {
     const [perUser, tasks, projects, byWeek] = await Promise.all([
@@ -34,10 +34,10 @@ router.get('/', async (req, res) => {
                      interval '1 week'
                  ) AS week
              )
-             SELECT to_char(w.week, 'YYYY-MM-DD') AS week, count(p.id) AS completed
+             SELECT to_char(w.week, 'YYYY-MM-DD') AS week, count(p.id) AS received
              FROM weeks w
              LEFT JOIN projects p ON p.state = 'done'
-                 AND date_trunc('week', p.completed_at AT TIME ZONE $1) = w.week
+                 AND date_trunc('week', p.rebate_received_on::timestamp) = w.week
              GROUP BY w.week ORDER BY w.week`,
             [TIME_ZONE, WEEKS],
         ),
@@ -59,9 +59,46 @@ router.get('/', async (req, res) => {
             open: Number(projects.rows[0].open),
             inactive: Number(projects.rows[0].inactive),
         },
-        projectsCompletedByWeek: byWeek.rows.map((row) => ({
+        // Rebates received each week, by the date the rebate arrived.
+        rebatesByWeek: byWeek.rows.map((row) => ({
             week: row.week,
-            completed: Number(row.completed),
+            received: Number(row.received),
+        })),
+    });
+});
+
+const DAYS = 30;
+
+// The signed-in person's last 30 days: tasks they completed (by uploading
+// the document) and applications they marked submitted, per day.
+router.get('/me', async (req, res) => {
+    const { rows } = await db.query(
+        `WITH days AS (
+             SELECT generate_series(
+                 (now() AT TIME ZONE $1)::date - ($2 - 1),
+                 (now() AT TIME ZONE $1)::date,
+                 interval '1 day'
+             )::date AS day
+         )
+         SELECT to_char(d.day, 'YYYY-MM-DD') AS day,
+                count(h.id) FILTER (WHERE h.task_id IS NOT NULL) AS tasks,
+                count(h.id) FILTER (WHERE h.task_id IS NULL) AS submitted
+         FROM days d
+         LEFT JOIN history h
+             ON (h.created_at AT TIME ZONE $1)::date = d.day
+             AND h.actor_id = $3
+             AND h.action = 'update'
+             AND h.field = 'state'
+             AND h.new_value IN ('done', 'submitted')
+             AND h.undone_at IS NULL
+         GROUP BY d.day ORDER BY d.day`,
+        [TIME_ZONE, DAYS, req.user.id],
+    );
+    res.send({
+        days: rows.map((row) => ({
+            day: row.day,
+            tasksCompleted: Number(row.tasks),
+            applicationsSubmitted: Number(row.submitted),
         })),
     });
 });

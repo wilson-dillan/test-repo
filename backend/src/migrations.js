@@ -93,6 +93,39 @@ MIGRATIONS.tasks_with_documents_done = async (client) => {
     );
 };
 
+// Uploads used to read file names as Latin-1, so "7.18.13 PM.png" (with
+// the special space Macs put in screenshot names) or "ñ" came out garbled.
+// Re-read those names as the UTF-8 they really were.
+function fixGarbled(name) {
+    if (!/[Â-ô][\u0080-¿]/.test(name)) return name;
+    if (/[^\u0000-ÿ]/.test(name)) return name;
+    const fixed = Buffer.from(name, 'latin1').toString('utf8');
+    return fixed.includes('�') ? name : fixed;
+}
+
+MIGRATIONS.utf8_file_names = async (client) => {
+    const { rows } = await client.query('SELECT id, filename FROM attachments');
+    for (const row of rows) {
+        const fixed = fixGarbled(row.filename);
+        if (fixed !== row.filename)
+            await client.query(
+                'UPDATE attachments SET filename = $2 WHERE id = $1',
+                [row.id, fixed],
+            );
+    }
+    const { rows: entries } = await client.query(
+        "SELECT id, new_value FROM history WHERE action = 'file'",
+    );
+    for (const row of entries) {
+        const fixed = fixGarbled(row.new_value || '');
+        if (fixed !== row.new_value)
+            await client.query(
+                'UPDATE history SET new_value = $2 WHERE id = $1',
+                [row.id, fixed],
+            );
+    }
+};
+
 async function runMigrations(transaction) {
     for (const [name, migrate] of Object.entries(MIGRATIONS)) {
         await transaction(async (client) => {

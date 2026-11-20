@@ -22,7 +22,29 @@ const DONE = '#1D5BA8';
 const TODO = '#1FA6D6';
 const EMPTY = '#E1E7EF';
 const AXIS = { fill: '#5C6B80', fontSize: 12 };
+
+// Categorical colors from the dataviz reference palette, checked with its
+// validator (all pairs pass the color-blind and normal-vision floors).
+// Yellow and pink are under 3:1 on white, so the legend under the pie
+// names every status with its count.
+const STATUS_COLORS = {
+    todo: '#2A78D6',
+    in_progress: '#EDA100',
+    submitted: '#E87BA4',
+    done: '#008300',
+};
+const APPLICATIONS = '#2A78D6';
+const OPEN_TASKS = '#EB6834';
 const GRID = '#E1E7EF';
+
+// Chart click -> onSelect(id of the clicked column's row).
+function selectColumn(state, data, onSelect) {
+    // A click between columns reports no column at all (null).
+    const index = state?.activeIndex ?? state?.activeTooltipIndex;
+    if (index === null || index === undefined || !onSelect) return;
+    const row = data[Number(index)];
+    if (row) onSelect(row.id);
+}
 
 const shortDate = new Intl.DateTimeFormat(undefined, {
     month: 'short',
@@ -138,18 +160,22 @@ DonutChart.propTypes = {
     label: PropTypes.string,
 };
 
-export function TasksPerUserChart({ users }) {
+// Per person: applications they own and tasks assigned to them that are
+// still open. Clicking a person's column calls onSelect(user id); the
+// selected person stays bright and the others fade.
+export function UserWorkloadChart({ users, selectedId, onSelect }) {
     const data = users.map((u) => ({
+        id: u.id,
         name: u.name,
-        Done: u.done,
-        'To Do': u.total - u.done,
+        'Applications owned': u.applications,
+        'Open tasks': u.openTasks,
     }));
     return (
         <div>
             <Legend
                 items={[
-                    { label: 'Done', color: DONE },
-                    { label: 'To Do', color: TODO },
+                    { label: 'Applications owned', color: APPLICATIONS },
+                    { label: 'Open tasks', color: OPEN_TASKS },
                 ]}
             />
             <div style={{ height: 280 }} className="mt-2">
@@ -157,6 +183,9 @@ export function TasksPerUserChart({ users }) {
                     <BarChart
                         data={data}
                         margin={{ top: 8, right: 8, left: -12, bottom: 0 }}
+                        barGap={2}
+                        onClick={(e) => selectColumn(e, data, onSelect)}
+                        style={onSelect ? { cursor: 'pointer' } : undefined}
                     >
                         <CartesianGrid vertical={false} stroke={GRID} />
                         <XAxis
@@ -181,25 +210,31 @@ export function TasksPerUserChart({ users }) {
                             cursor={{ fill: 'rgba(29, 91, 168, 0.06)' }}
                             content={<ChartTooltip title={(d) => d.name} />}
                         />
-                        <Bar
-                            dataKey="Done"
-                            stackId="tasks"
-                            fill={DONE}
-                            stroke="#fff"
-                            strokeWidth={2}
-                            maxBarSize={28}
-                            isAnimationActive={false}
-                        />
-                        <Bar
-                            dataKey="To Do"
-                            stackId="tasks"
-                            fill={TODO}
-                            stroke="#fff"
-                            strokeWidth={2}
-                            radius={[4, 4, 0, 0]}
-                            maxBarSize={28}
-                            isAnimationActive={false}
-                        />
+                        {[
+                            ['Applications owned', APPLICATIONS],
+                            ['Open tasks', OPEN_TASKS],
+                        ].map(([key, color]) => (
+                            <Bar
+                                key={key}
+                                dataKey={key}
+                                fill={color}
+                                radius={[4, 4, 0, 0]}
+                                maxBarSize={22}
+                                isAnimationActive={false}
+                            >
+                                {data.map((d) => (
+                                    <Cell
+                                        key={d.id}
+                                        fillOpacity={
+                                            selectedId == null ||
+                                            selectedId === d.id
+                                                ? 1
+                                                : 0.3
+                                        }
+                                    />
+                                ))}
+                            </Bar>
+                        ))}
                     </BarChart>
                 </ResponsiveContainer>
             </div>
@@ -207,16 +242,82 @@ export function TasksPerUserChart({ users }) {
     );
 }
 
-TasksPerUserChart.propTypes = { users: PropTypes.array.isRequired };
+UserWorkloadChart.propTypes = {
+    users: PropTypes.array.isRequired,
+    selectedId: PropTypes.number,
+    onSelect: PropTypes.func,
+};
 
-export function WeeklyCompletionsChart({ weeks }) {
-    const data = weeks.map((w) => ({
-        week: w.week,
-        'Projects completed': w.completed,
-    }));
-    const label = (week) => shortDate.format(parseDate(week));
+// How many active applications are at each stage. Clicking a slice (or
+// its legend entry) calls onSelect(status).
+export function ApplicationStatusChart({ counts, onSelect }) {
+    const total = counts.reduce((n, c) => n + c.count, 0);
+    const data = counts.filter((c) => c.count > 0);
     return (
-        <div style={{ height: 240 }}>
+        <div>
+            <div style={{ height: 230 }}>
+                <ResponsiveContainer>
+                    <PieChart>
+                        <Pie
+                            data={total ? data : [{ label: 'None', count: 1 }]}
+                            dataKey="count"
+                            nameKey="label"
+                            outerRadius="90%"
+                            stroke="#fff"
+                            strokeWidth={2}
+                            isAnimationActive={false}
+                            onClick={(d) =>
+                                onSelect?.(d.payload?.status ?? d.status)
+                            }
+                            cursor={onSelect ? 'pointer' : undefined}
+                        >
+                            {(total ? data : [{ status: 'none' }]).map((d) => (
+                                <Cell
+                                    key={d.status}
+                                    fill={STATUS_COLORS[d.status] || EMPTY}
+                                />
+                            ))}
+                        </Pie>
+                        {total > 0 && (
+                            <Tooltip
+                                content={
+                                    <ChartTooltip title={(d) => d.label} />
+                                }
+                            />
+                        )}
+                    </PieChart>
+                </ResponsiveContainer>
+            </div>
+            <div className="chart-legend status-legend mt-2">
+                {counts.map((c) => (
+                    <button
+                        type="button"
+                        key={c.status}
+                        onClick={() => onSelect?.(c.status)}
+                    >
+                        <span
+                            className="swatch"
+                            style={{ background: STATUS_COLORS[c.status] }}
+                        />
+                        {c.label}
+                        <strong>{c.count}</strong>
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+ApplicationStatusChart.propTypes = {
+    counts: PropTypes.array.isRequired,
+    onSelect: PropTypes.func,
+};
+
+// A single-series line over dates ('YYYY-MM-DD'), one point per period.
+function TrendLineChart({ data, dataKey, title, height = 240 }) {
+    const label = (date) => shortDate.format(parseDate(date));
+    return (
+        <div style={{ height }}>
             <ResponsiveContainer>
                 <LineChart
                     data={data}
@@ -224,7 +325,7 @@ export function WeeklyCompletionsChart({ weeks }) {
                 >
                     <CartesianGrid vertical={false} stroke={GRID} />
                     <XAxis
-                        dataKey="week"
+                        dataKey="date"
                         tick={AXIS}
                         tickLine={false}
                         axisLine={{ stroke: GRID }}
@@ -240,20 +341,18 @@ export function WeeklyCompletionsChart({ weeks }) {
                     <Tooltip
                         cursor={{ stroke: GRID, strokeWidth: 1 }}
                         content={
-                            <ChartTooltip
-                                title={(d) => `Week of ${label(d.week)}`}
-                            />
+                            <ChartTooltip title={(d) => title(label(d.date))} />
                         }
                     />
                     <Line
                         type="linear"
-                        dataKey="Projects completed"
+                        dataKey={dataKey}
                         stroke={DONE}
                         strokeWidth={2}
                         strokeLinejoin="round"
                         strokeLinecap="round"
                         dot={{
-                            r: 4,
+                            r: data.length > 20 ? 3 : 4,
                             fill: DONE,
                             stroke: '#fff',
                             strokeWidth: 2,
@@ -267,4 +366,100 @@ export function WeeklyCompletionsChart({ weeks }) {
     );
 }
 
-WeeklyCompletionsChart.propTypes = { weeks: PropTypes.array.isRequired };
+TrendLineChart.propTypes = {
+    data: PropTypes.array.isRequired,
+    dataKey: PropTypes.string.isRequired,
+    title: PropTypes.func.isRequired,
+    height: PropTypes.number,
+};
+
+// Rebates received each week (by the date the rebate arrived).
+export function RebatesByWeekChart({ weeks }) {
+    return (
+        <TrendLineChart
+            data={weeks.map((w) => ({
+                date: w.week,
+                'Rebates received': w.received,
+            }))}
+            dataKey="Rebates received"
+            title={(date) => `Week of ${date}`}
+        />
+    );
+}
+
+RebatesByWeekChart.propTypes = { weeks: PropTypes.array.isRequired };
+
+// One person's count per day, e.g. tasks they completed.
+export function DailyLineChart({ days, field, name }) {
+    return (
+        <TrendLineChart
+            data={days.map((d) => ({ date: d.day, [name]: d[field] }))}
+            dataKey={name}
+            title={(date) => date}
+            height={200}
+        />
+    );
+}
+
+DailyLineChart.propTypes = {
+    days: PropTypes.array.isRequired,
+    field: PropTypes.string.isRequired,
+    name: PropTypes.string.isRequired,
+};
+
+// One row per application: a bar of its documents, uploaded vs missing.
+export function PriorityChart({ ranked, onOpen, formatAge }) {
+    return (
+        <div>
+            <Legend
+                items={[
+                    { label: 'Uploaded', color: DONE },
+                    { label: 'Missing', color: EMPTY },
+                ]}
+            />
+            <ol className="priority-list mt-2">
+                {ranked.map((p, i) => (
+                    <li key={p.id}>
+                        <button
+                            type="button"
+                            onClick={() => onOpen(p)}
+                            title={`${p.taskDone} of ${p.taskTotal} documents uploaded · ${formatAge(p.age)}`}
+                        >
+                            <span className="rank">{i + 1}</span>
+                            <span className="who">
+                                <span className="name">{p.customerName}</span>
+                                <span className="meta">
+                                    #{p.id} · {p.typeLabel} · {formatAge(p.age)}
+                                </span>
+                            </span>
+                            <span
+                                className="docs"
+                                role="img"
+                                aria-label={`${p.taskDone} of ${p.taskTotal} documents uploaded`}
+                            >
+                                {Array.from({ length: p.taskTotal }, (_, k) => (
+                                    <span
+                                        key={k}
+                                        style={{
+                                            background:
+                                                k < p.taskDone ? DONE : EMPTY,
+                                        }}
+                                    />
+                                ))}
+                            </span>
+                            <span className="count">
+                                {p.taskDone}/{p.taskTotal}
+                            </span>
+                        </button>
+                    </li>
+                ))}
+            </ol>
+        </div>
+    );
+}
+
+PriorityChart.propTypes = {
+    ranked: PropTypes.array.isRequired,
+    onOpen: PropTypes.func.isRequired,
+    formatAge: PropTypes.func.isRequired,
+};

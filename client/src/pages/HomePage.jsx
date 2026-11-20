@@ -11,7 +11,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { api } from '../api';
 import { useAuth, useLoad } from '../hooks';
 import { ProjectCard, TaskItem } from '../components/cards';
-import { DonutChart } from '../components/charts';
+import { DailyLineChart, DonutChart } from '../components/charts';
 import { EmptyState, LoadError, PageLoader } from '../components/ui';
 
 const today = new Intl.DateTimeFormat(undefined, {
@@ -26,6 +26,7 @@ export function HomePage() {
         Promise.all([
             api.get('/projects?owner=me'),
             api.get('/tasks?owner=me'),
+            api.get('/stats/me'),
         ]),
     );
 
@@ -42,12 +43,18 @@ export function HomePage() {
 
             {error && <LoadError error={error} onRetry={reload} />}
             {!data && !error && <PageLoader />}
-            {data && <HomeContent projects={data[0]} tasks={data[1]} />}
+            {data && (
+                <HomeContent
+                    projects={data[0]}
+                    tasks={data[1]}
+                    activity={data[2].days}
+                />
+            )}
         </>
     );
 }
 
-function HomeContent({ projects, tasks }) {
+function HomeContent({ projects, tasks, activity }) {
     const done = tasks.filter((t) => t.state === 'done').length;
     const openProjects = projects.filter(
         (p) => p.state === 'todo' && p.active,
@@ -106,6 +113,39 @@ function HomeContent({ projects, tasks }) {
                         </Col>
                     </Row>
                 </section>
+
+                <Row className="g-4 mt-0">
+                    <Col xs={12}>
+                        <section className="panel h-100">
+                            <div className="panel-title mb-1">
+                                <h2>Tasks I Completed</h2>
+                            </div>
+                            <div className="text-muted small mb-2">
+                                Per day · last 30 days
+                            </div>
+                            <DailyLineChart
+                                days={activity}
+                                field="tasksCompleted"
+                                name="Tasks completed"
+                            />
+                        </section>
+                    </Col>
+                    <Col xs={12}>
+                        <section className="panel h-100">
+                            <div className="panel-title mb-1">
+                                <h2>Applications I Submitted</h2>
+                            </div>
+                            <div className="text-muted small mb-2">
+                                Per day · last 30 days
+                            </div>
+                            <DailyLineChart
+                                days={activity}
+                                field="applicationsSubmitted"
+                                name="Applications submitted"
+                            />
+                        </section>
+                    </Col>
+                </Row>
             </Col>
 
             <Col xl={4}>
@@ -138,28 +178,14 @@ function HomeContent({ projects, tasks }) {
 HomeContent.propTypes = {
     projects: PropTypes.array.isRequired,
     tasks: PropTypes.array.isRequired,
+    activity: PropTypes.array.isRequired,
 };
 
 function ProgressFacts({ tasks }) {
     const open = tasks.filter((t) => t.state === 'todo');
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const iso = (d) => d.toLocaleDateString('en-CA');
-    const overdue = open.filter((t) => t.dueDate && t.dueDate < iso(today));
-    const week = new Date(today);
-    week.setDate(week.getDate() + 7);
-    const dueThisWeek = open.filter(
-        (t) => t.dueDate && t.dueDate >= iso(today) && t.dueDate <= iso(week),
-    );
-
     const facts = [
         { label: 'Open tasks', value: open.length },
-        { label: 'Due in the next 7 days', value: dueThisWeek.length },
-        {
-            label: 'Overdue',
-            value: overdue.length,
-            tone: overdue.length ? 'text-danger' : '',
-        },
+        { label: 'Done tasks', value: tasks.length - open.length },
     ];
     return (
         <dl className="mb-0">

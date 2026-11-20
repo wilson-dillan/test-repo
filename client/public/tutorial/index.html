@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1, viewport-fit=cover"
+        />
+        <meta name="robots" content="noindex" />
+        <link rel="icon" href="/favicon.png" />
+        <title>Mass Save Application Tracker Guide</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            rel="stylesheet"
+            href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&family=Raleway:wght@700;800&display=swap"
+        />
+        <style>
+            /* Layout: one column of numbered steps; each step is one sentence over
+   one big screenshot. The tracker's navy opens the page with the goal. */
+            :root {
+                --navy: #05438f;
+                --ink: #17233a;
+                --muted: #5c6b80;
+                --ground: #f3f6fa;
+                --surface: #ffffff;
+                --line: #dde4ee;
+                --red: #e02020;
+                --display: 'Raleway', 'Open Sans', system-ui, sans-serif;
+                --body: 'Open Sans', system-ui, -apple-system, 'Segoe UI',
+                    sans-serif;
+            }
+            @media (prefers-color-scheme: dark) {
+                :root:not([data-theme='light']) {
+                    color-scheme: dark;
+                    --navy: #7fb2f0;
+                    --ink: #e6ecf5;
+                    --muted: #a3b1c4;
+                    --ground: #0f1726;
+                    --surface: #172235;
+                    --line: #2a3a54;
+                    --red: #ff6b6b;
+                }
+            }
+            :root[data-theme='dark'] {
+                color-scheme: dark;
+                --navy: #7fb2f0;
+                --ink: #e6ecf5;
+                --muted: #a3b1c4;
+                --ground: #0f1726;
+                --surface: #172235;
+                --line: #2a3a54;
+                --red: #ff6b6b;
+            }
+            body {
+                margin: 0;
+                background: var(--ground);
+                color: var(--ink);
+                font-family: var(--body);
+                font-size: 17px;
+                line-height: 1.55;
+            }
+            h1,
+            h2 {
+                font-family: var(--display);
+                line-height: 1.2;
+                margin: 0;
+                text-wrap: balance;
+            }
+            p {
+                margin: 0;
+            }
+
+            .hero {
+                background: #05438f;
+                color: #fff;
+                padding-block: 2.5rem 2.25rem;
+                padding-left: max(16px, env(safe-area-inset-left, 0px));
+                padding-right: max(16px, env(safe-area-inset-right, 0px));
+            }
+            .hero-inner {
+                max-width: 900px;
+                margin: 0 auto;
+                display: grid;
+                gap: 0.9rem;
+            }
+            .eyebrow {
+                font-size: 0.78rem;
+                font-weight: 700;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+                opacity: 0.8;
+            }
+            .hero h1 {
+                font-size: clamp(1.8rem, 4.5vw, 2.6rem);
+                font-weight: 800;
+            }
+            .goal {
+                font-size: clamp(1.15rem, 2.6vw, 1.4rem);
+                max-width: 40rem;
+            }
+            .goal strong {
+                color: #ffd38a;
+            }
+            .key {
+                font-size: 0.95rem;
+                opacity: 0.9;
+            }
+            .key .box {
+                display: inline-block;
+                width: 1.3rem;
+                height: 0.85rem;
+                border: 3px solid #ff6b6b;
+                border-radius: 4px;
+                vertical-align: -0.1rem;
+            }
+
+            .steps {
+                list-style: none;
+                max-width: 900px;
+                margin: 0 auto;
+                padding-block: 2rem 4rem;
+                padding-left: max(16px, env(safe-area-inset-left, 0px));
+                padding-right: max(16px, env(safe-area-inset-right, 0px));
+                display: grid;
+                gap: 2.25rem;
+            }
+            .step {
+                display: grid;
+                gap: 0.8rem;
+            }
+            .step h2 {
+                font-size: clamp(1.2rem, 2.6vw, 1.45rem);
+                display: flex;
+                gap: 0.75rem;
+                align-items: baseline;
+            }
+            .step h2 .n {
+                flex: none;
+                width: 2rem;
+                height: 2rem;
+                border-radius: 50%;
+                background: var(--navy);
+                color: var(--surface);
+                font-size: 1rem;
+                display: inline-grid;
+                place-items: center;
+                transform: translateY(-0.15rem);
+            }
+            .step p {
+                color: var(--muted);
+                padding-left: 2.75rem;
+                max-width: 46rem;
+            }
+            .step img {
+                display: block;
+                width: 100%;
+                max-width: 100%;
+                height: auto;
+                border-radius: 10px;
+                border: 1px solid var(--line);
+                background: #fff;
+            }
+            .ui {
+                font-weight: 700;
+                color: var(--ink);
+            }
+            @media (max-width: 600px) {
+                .step p {
+                    padding-left: 0;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <header class="hero">
+            <div class="hero-inner">
+                <div class="eyebrow">Wilson Services · Team guide</div>
+                <h1>Mass Save Application Tracker</h1>
+                <p class="goal">
+                    Use the tracker to
+                    <strong
+                        >follow every application from start to rebate
+                        received.</strong
+                    >
+                </p>
+                <p class="key">
+                    In each picture, click what's inside the
+                    <span class="box"></span> red box.
+                </p>
+            </div>
+        </header>
+
+        <ol class="steps">
+            <li class="step">
+                <h2><span class="n">1</span>Start a new application</h2>
+                <p>
+                    Click <span class="ui">Track New Application</span> at the
+                    top of the left menu.
+                </p>
+                <img
+                    src="shots/01-start.jpg"
+                    alt="Home page with Track New Application boxed in red"
+                    loading="lazy"
+                />
+            </li>
+            <li class="step">
+                <h2><span class="n">2</span>Pick the type</h2>
+                <p>
+                    Choose Whole Home, Partial Home or Basic Rebate, then click
+                    <span class="ui">Next</span>.
+                </p>
+                <img
+                    src="shots/02-type.jpg"
+                    alt="Project types with Whole Home boxed in red"
+                    loading="lazy"
+                />
+            </li>
+            <li class="step">
+                <h2><span class="n">3</span>Add the customer</h2>
+                <p>
+                    Search Housecall Pro to fill in the customer, or type the
+                    name and address. Then answer the questions and click
+                    <span class="ui">Next</span> through to the end.
+                </p>
+                <img
+                    src="shots/03-customer.jpg"
+                    alt="Customer step with the Housecall Pro search boxed in red"
+                    loading="lazy"
+                />
+            </li>
+            <li class="step">
+                <h2><span class="n">4</span>Create it</h2>
+                <p>
+                    Check the details and click
+                    <span class="ui">Create project</span>. Each document the
+                    application needs becomes a task.
+                </p>
+                <img
+                    src="shots/04-create.jpg"
+                    alt="Review screen with Create project boxed in red"
+                    loading="lazy"
+                />
+            </li>
+            <li class="step">
+                <h2><span class="n">5</span>Reassign a task</h2>
+                <p>
+                    To hand a document to someone else, pick their name under
+                    <span class="ui">Assigned to</span>. They get an email, and
+                    a notice at the top confirms it was sent.
+                </p>
+                <img
+                    src="shots/05-reassign.jpg"
+                    alt="Assigned to list boxed in red, with an Email sent notice at the top"
+                    loading="lazy"
+                />
+            </li>
+            <li class="step">
+                <h2><span class="n">6</span>Open a task for more details</h2>
+                <p>
+                    Click a task's name (it's underlined) to open its own page.
+                </p>
+                <img
+                    src="shots/06-task-name.jpg"
+                    alt="Manual J Calculation task name boxed in red"
+                    loading="lazy"
+                />
+            </li>
+            <li class="step">
+                <h2><span class="n">7</span>See the task's details</h2>
+                <p>
+                    The task page shows who owns it, the customer and address,
+                    notes about the task, and its history. You can reassign it
+                    or upload its document here too.
+                </p>
+                <img
+                    src="shots/07-task-page.jpg"
+                    alt="Task details panel boxed in red"
+                    loading="lazy"
+                />
+            </li>
+            <li class="step">
+                <h2><span class="n">8</span>Upload each document</h2>
+                <p>
+                    Drag the file onto
+                    <span class="ui">Drop file here</span> beside the document,
+                    or click the box to choose it.
+                </p>
+                <img
+                    src="shots/08-upload.jpg"
+                    alt="Document list with the first Drop file here box boxed in red"
+                    loading="lazy"
+                />
+            </li>
+            <li class="step">
+                <h2><span class="n">9</span>Confirm the upload</h2>
+                <p>
+                    Check the preview is the right document, then click
+                    <span class="ui">Yes, upload it</span>. This can't be
+                    undone.
+                </p>
+                <img
+                    src="shots/09-confirm.jpg"
+                    alt="Upload preview with Yes, upload it boxed in red"
+                    loading="lazy"
+                />
+            </li>
+            <li class="step">
+                <h2><span class="n">10</span>Mark it as submitted</h2>
+                <p>
+                    Once every document is in and you've sent it to Mass Save,
+                    click <span class="ui">Mark as submitted</span>.
+                </p>
+                <img
+                    src="shots/10-submit.jpg"
+                    alt="Application page with Mark as submitted boxed in red"
+                    loading="lazy"
+                />
+            </li>
+            <li class="step">
+                <h2><span class="n">11</span>Record the rebate</h2>
+                <p>
+                    When the rebate arrives, click
+                    <span class="ui">Rebate Received</span> and enter the
+                    number, amount and date. The application is now Done.
+                </p>
+                <img
+                    src="shots/11-rebate.jpg"
+                    alt="Submitted application with Rebate Received boxed in red"
+                    loading="lazy"
+                />
+            </li>
+            <li class="step">
+                <h2><span class="n">12</span>Keep track of your own work</h2>
+                <p>
+                    Click <span class="ui">Home</span> any time to see
+                    everything assigned to you.
+                    <span class="ui">My Projects</span> shows the applications
+                    you own and their stage,
+                    <span class="ui">My Tasks</span> lists the documents waiting
+                    on you, and <span class="ui">My Task Progress</span> shows
+                    how much you've finished. Click any card or task to open it.
+                </p>
+                <img
+                    src="shots/12-home.jpg"
+                    alt="Home page with the Home menu item boxed in red"
+                    loading="lazy"
+                />
+            </li>
+            <li class="step">
+                <h2>
+                    <span class="n">13</span>See the whole team on the Dashboard
+                </h2>
+                <p>
+                    Click <span class="ui">Dashboard</span> to see what to work
+                    on next, every application's status, and each person's work.
+                </p>
+                <img
+                    src="shots/13-dashboard.jpg"
+                    alt="Dashboard with the Dashboard menu item boxed in red"
+                    loading="lazy"
+                />
+            </li>
+            <li class="step">
+                <h2><span class="n">14</span>Report a problem</h2>
+                <p>
+                    Something not working? Click
+                    <span class="ui">Report a problem</span>, describe it, add a
+                    screenshot if you like, and send.
+                </p>
+                <img
+                    src="shots/14-report.jpg"
+                    alt="Left menu with Report a problem boxed in red"
+                    loading="lazy"
+                />
+            </li>
+        </ol>
+    </body>
+</html>

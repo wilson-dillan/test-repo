@@ -297,7 +297,6 @@ run('API', () => {
             customerFirstName: 'Jane',
             customerLastName: 'Smith',
             address: '12 Oak St',
-            dueDate: '2026-12-01',
             ownerId: bobId,
             note: 'Gate code 1234',
         });
@@ -410,6 +409,30 @@ run('API', () => {
         });
     });
 
+    test('file names keep accents and special spaces', async () => {
+        const { data: other } = await alice.post('/api/projects', {
+            type: 'basic_rebate',
+            financing: false,
+            customerFirstName: 'Utf',
+            customerLastName: 'Eight',
+            address: '1 Name St',
+            ownerId: aliceId,
+        });
+        const name = 'Screenshot 2026-11-18 at 7.18.13\u202fPM ñ.pdf';
+        const body = new FormData();
+        body.append(
+            'files',
+            new Blob([Buffer.from('%PDF-1.4\n')], { type: 'application/pdf' }),
+            name,
+        );
+        const { data } = await alice.post(
+            `/api/tasks/${other.tasks[0].id}/attachments`,
+            body,
+        );
+        expect(data.attachments[0].filename).toBe(name);
+        await boss.del(`/api/projects/${other.id}`);
+    });
+
     test('a task is done exactly when its document is uploaded', async () => {
         const { data: other } = await alice.post('/api/projects', {
             type: 'basic_rebate',
@@ -484,21 +507,25 @@ run('API', () => {
     test('project fields can be edited and are logged', async () => {
         const { data } = await bob.patch(`/api/projects/${project.id}`, {
             address: '14 Oak St',
-            dueDate: '2026-12-15',
+            customerLastName: 'Smyth',
         });
         expect(data.address).toBe('14 Oak St');
-        expect(data.dueDate).toBe('2026-12-15');
         expect(
             data.history
                 .slice(0, 2)
                 .map((h) => h.field)
                 .sort(),
-        ).toEqual(['address', 'due_date']);
+        ).toEqual(['address', 'customer_last_name']);
+        await bob.patch(`/api/projects/${project.id}`, {
+            customerLastName: 'Smith',
+        });
 
+        // Due dates were removed from the app.
         const bad = await bob.patch(`/api/projects/${project.id}`, {
-            dueDate: 'tomorrow',
+            dueDate: '2026-12-15',
         });
         expect(bad.status).toBe(400);
+        expect(data.dueDate).toBeUndefined();
     });
 
     test('notes can be added to a project', async () => {
@@ -574,7 +601,18 @@ run('API', () => {
             total: 4,
             done: 2,
         });
-        expect(data.projectsCompletedByWeek).toHaveLength(12);
+        expect(data.rebatesByWeek).toHaveLength(12);
+    });
+
+    test('my activity counts tasks completed and applications submitted per day', async () => {
+        const { data } = await bob.get('/api/stats/me');
+        expect(data.days).toHaveLength(30);
+        const today = data.days[29];
+        expect(today.tasksCompleted).toBeGreaterThan(0);
+        const alices = await alice.get('/api/stats/me');
+        const total = (d) =>
+            d.days.reduce((n, x) => n + x.applicationsSubmitted, 0);
+        expect(total(alices.data)).toBe(0);
     });
 
     test('activity feed shows recent changes across projects', async () => {
@@ -910,9 +948,11 @@ run('API', () => {
             ...base,
             financing: false,
             integratedControls: true,
-            controlsType: 'Mitsubishi',
+            controlsType: 'Nest',
         });
-        expect(badControls.data.error).toMatch(/Ecobee, Flair, Other/);
+        expect(badControls.data.error).toMatch(
+            /Ecobee, Flair, Mitsubishi, Other/,
+        );
 
         const { data } = await bob.post('/api/projects', {
             ...base,
@@ -1347,7 +1387,7 @@ run('API', () => {
             const tries = [
                 who.patch(`/api/projects/${id}`, { address: 'New St' }),
                 who.patch(`/api/projects/${id}`, { customerFirstName: 'X' }),
-                who.patch(`/api/projects/${id}`, { dueDate: '2030-01-01' }),
+                who.patch(`/api/projects/${id}`, { customerLastName: 'Y' }),
                 who.patch(`/api/tasks/${task.id}`, { ownerId: aliceId }),
                 who.patch(`/api/tasks/${task.id}`, { notes: 'changed' }),
                 who.patch(`/api/projects/${id}`, { active: false }),

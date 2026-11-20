@@ -1,5 +1,5 @@
 import PropTypes from 'prop-types';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ButtonGroup from 'react-bootstrap/ButtonGroup';
 import Button from 'react-bootstrap/Button';
@@ -17,12 +17,19 @@ import { useLoad } from '../hooks';
 import { ActivityDrawer } from '../components/ActivityDrawer';
 import { HistoryTimeline } from '../components/HistoryTimeline';
 import {
-    DonutChart,
-    TasksPerUserChart,
-    WeeklyCompletionsChart,
+    ApplicationStatusChart,
+    PriorityChart,
+    RebatesByWeekChart,
+    UserWorkloadChart,
 } from '../components/charts';
+import { ProjectItem, TaskItem } from '../components/cards';
 import {
-    DueDate,
+    PROJECT_STATUS_LABELS,
+    daysOld,
+    formatAge,
+    rankByPriority,
+} from '../format';
+import {
     EmptyState,
     InactiveBadge,
     LoadError,
@@ -33,7 +40,11 @@ import {
 
 export function DashboardPage() {
     const { data, error, reload } = useLoad(() =>
-        Promise.all([api.get('/stats'), api.get('/projects')]),
+        Promise.all([
+            api.get('/stats'),
+            api.get('/projects'),
+            api.get('/tasks'),
+        ]),
     );
 
     return (
@@ -46,72 +57,65 @@ export function DashboardPage() {
             </div>
             {error && <LoadError error={error} onRetry={reload} />}
             {!data && !error && <PageLoader />}
-            {data && <DashboardContent stats={data[0]} projects={data[1]} />}
+            {data && (
+                <DashboardContent
+                    stats={data[0]}
+                    projects={data[1]}
+                    tasks={data[2]}
+                />
+            )}
         </>
     );
 }
 
-function DashboardContent({ stats, projects }) {
-    const weekTotal = stats.projectsCompletedByWeek.reduce(
-        (sum, w) => sum + w.completed,
-        0,
+const STATUS_ORDER = ['todo', 'in_progress', 'submitted', 'done'];
+const PRIORITY_SHOWN = 8;
+
+function DashboardContent({ stats, projects, tasks }) {
+    const [filter, setFilter] = useState('open');
+    const [selectedUser, setSelectedUser] = useState(null);
+    const active = projects.filter((p) => p.active);
+    const counts = STATUS_ORDER.map((status) => ({
+        status,
+        label: status === 'done' ? 'Done' : PROJECT_STATUS_LABELS[status],
+        count: active.filter((p) => p.status === status).length,
+    }));
+    const open = active.filter((p) => p.status !== 'done');
+
+    // Open tasks: not done, still needed, on an active application.
+    const openTasks = tasks.filter(
+        (t) => t.state === 'todo' && t.active && t.projectActive !== false,
     );
-    const tiles = [
-        {
-            label: 'Open projects',
-            value: stats.projects.open,
-            sub: `${stats.projects.inactive} inactive · ${stats.projects.total} total`,
-        },
-        {
-            label: 'Rebates received',
-            value: stats.projects.done,
-            sub: `${weekTotal} in the last 12 weeks`,
-        },
-        {
-            label: 'Open tasks',
-            value: stats.tasks.total - stats.tasks.done,
-            sub: `${stats.tasks.done} of ${stats.tasks.total} done`,
-        },
-        {
-            label: 'Team members',
-            value: stats.tasksPerUser.length,
-            sub: 'active users',
-        },
-    ];
+    const workload = stats.tasksPerUser.map((u) => ({
+        id: u.id,
+        name: u.name,
+        applications: open.filter((p) => p.owner.id === u.id).length,
+        openTasks: openTasks.filter((t) => t.owner.id === u.id).length,
+    }));
+    const selected = workload.find((u) => u.id === selectedUser);
 
     return (
         <>
-            <Row className="g-3 mb-4">
-                {tiles.map((tile) => (
-                    <Col key={tile.label} xs={6} lg={3}>
-                        <div className="panel stat-tile">
-                            <div className="label">{tile.label}</div>
-                            <div className="value">{tile.value}</div>
-                            <div className="sub">{tile.sub}</div>
-                        </div>
-                    </Col>
-                ))}
-            </Row>
-
             <Row className="g-4 mb-4">
                 <Col lg={7}>
-                    <section className="panel h-100">
-                        <div className="panel-title">
-                            <h2>Tasks per User</h2>
-                        </div>
-                        <TasksPerUserChart users={stats.tasksPerUser} />
-                    </section>
+                    <HighestPriority projects={projects} />
                 </Col>
                 <Col lg={5}>
                     <section className="panel h-100">
                         <div className="panel-title">
-                            <h2>Completed Tasks: {stats.tasks.done}</h2>
+                            <h2>Application Status</h2>
+                            <span className="text-muted small">
+                                Active applications
+                            </span>
                         </div>
-                        <DonutChart
-                            done={stats.tasks.done}
-                            todo={stats.tasks.total - stats.tasks.done}
-                            height={250}
-                            label="tasks done"
+                        <ApplicationStatusChart
+                            counts={counts}
+                            onSelect={(status) => {
+                                setFilter(status);
+                                document
+                                    .querySelector('.all-applications')
+                                    ?.scrollIntoView({ behavior: 'smooth' });
+                            }}
                         />
                     </section>
                 </Col>
@@ -121,14 +125,12 @@ function DashboardContent({ stats, projects }) {
                 <Col lg={7}>
                     <section className="panel h-100">
                         <div className="panel-title">
-                            <h2>Projects Completed by Week</h2>
+                            <h2>Rebates Received by Week</h2>
                             <span className="text-muted small">
                                 Last 12 weeks
                             </span>
                         </div>
-                        <WeeklyCompletionsChart
-                            weeks={stats.projectsCompletedByWeek}
-                        />
+                        <RebatesByWeekChart weeks={stats.rebatesByWeek} />
                     </section>
                 </Col>
                 <Col lg={5}>
@@ -136,7 +138,42 @@ function DashboardContent({ stats, projects }) {
                 </Col>
             </Row>
 
-            <AllProjects projects={projects} />
+            <AllProjects
+                projects={projects}
+                state={filter}
+                onStateChange={setFilter}
+            />
+            <section className="panel mb-4">
+                <div className="panel-title">
+                    <h2>Applications &amp; Tasks by User</h2>
+                    <span className="text-muted small">
+                        Click a person to see their work
+                    </span>
+                </div>
+                <UserWorkloadChart
+                    users={workload}
+                    selectedId={selectedUser}
+                    onSelect={(id) =>
+                        setSelectedUser((current) =>
+                            current === id ? null : id,
+                        )
+                    }
+                />
+                {selected && (
+                    <UserWork
+                        // Remount per person so the highlight replays.
+                        key={selected.id}
+                        user={selected}
+                        projects={open.filter(
+                            (p) => p.owner.id === selected.id,
+                        )}
+                        tasks={openTasks.filter(
+                            (t) => t.owner.id === selected.id,
+                        )}
+                        onClose={() => setSelectedUser(null)}
+                    />
+                )}
+            </section>
         </>
     );
 }
@@ -144,12 +181,112 @@ function DashboardContent({ stats, projects }) {
 DashboardContent.propTypes = {
     stats: PropTypes.object.isRequired,
     projects: PropTypes.array.isRequired,
+    tasks: PropTypes.array.isRequired,
 };
 
-function AllProjects({ projects }) {
+function HighestPriority({ projects }) {
+    const navigate = useNavigate();
+    const ranked = rankByPriority(projects);
+
+    return (
+        <section className="panel h-100">
+            <div className="panel-title">
+                <h2>Highest Priority</h2>
+            </div>
+            <div className="small text-muted mb-2">
+                The oldest and most incomplete applications are the highest
+                priority.
+            </div>
+            {ranked.length ? (
+                <PriorityChart
+                    ranked={ranked.slice(0, PRIORITY_SHOWN)}
+                    onOpen={(p) => navigate(`/projects/${p.id}`)}
+                    formatAge={formatAge}
+                />
+            ) : (
+                <EmptyState icon={faFolderOpen}>
+                    Every open application has all its documents.
+                </EmptyState>
+            )}
+            {ranked.length > PRIORITY_SHOWN && (
+                <div className="small text-muted mt-2">
+                    Showing the top {PRIORITY_SHOWN} of {ranked.length} still
+                    collecting documents.
+                </div>
+            )}
+        </section>
+    );
+}
+
+HighestPriority.propTypes = { projects: PropTypes.array.isRequired };
+
+// The open applications and open tasks of the person clicked in the chart,
+// shown right under it with a highlight so it's easy to spot.
+function UserWork({ user, projects, tasks, onClose }) {
+    const ref = useRef(null);
+    useEffect(() => {
+        ref.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, []);
+    return (
+        <div className="user-work" ref={ref}>
+            <div className="user-work-head">
+                <h3>{user.name}</h3>
+                <Button
+                    variant="link"
+                    size="sm"
+                    className="p-0"
+                    onClick={onClose}
+                >
+                    Close
+                </Button>
+            </div>
+            <Row className="g-4">
+                <Col lg={6}>
+                    <h4>
+                        Open applications
+                        <span className="count">{projects.length}</span>
+                    </h4>
+                    {projects.length ? (
+                        <div className="user-task-list">
+                            {projects.map((p) => (
+                                <ProjectItem key={p.id} project={p} />
+                            ))}
+                        </div>
+                    ) : (
+                        <p className="text-muted small mb-0">
+                            No open applications.
+                        </p>
+                    )}
+                </Col>
+                <Col lg={6}>
+                    <h4>
+                        Open tasks<span className="count">{tasks.length}</span>
+                    </h4>
+                    {tasks.length ? (
+                        <div className="user-task-list">
+                            {tasks.map((t) => (
+                                <TaskItem key={t.id} task={t} />
+                            ))}
+                        </div>
+                    ) : (
+                        <p className="text-muted small mb-0">No open tasks.</p>
+                    )}
+                </Col>
+            </Row>
+        </div>
+    );
+}
+
+UserWork.propTypes = {
+    user: PropTypes.object.isRequired,
+    projects: PropTypes.array.isRequired,
+    tasks: PropTypes.array.isRequired,
+    onClose: PropTypes.func.isRequired,
+};
+
+function AllProjects({ projects, state, onStateChange: setState }) {
     const navigate = useNavigate();
     const [search, setSearch] = useState('');
-    const [state, setState] = useState('open');
 
     const shown = useMemo(() => {
         const q = search.trim().toLowerCase();
@@ -167,10 +304,11 @@ function AllProjects({ projects }) {
     }, [projects, search, state]);
 
     return (
-        <section className="panel">
+        <section className="panel all-applications mb-4">
             <div className="panel-title flex-wrap">
                 <h2>
-                    All Projects<span className="count">{shown.length}</span>
+                    All Applications
+                    <span className="count">{shown.length}</span>
                 </h2>
                 <div className="d-flex gap-2 flex-wrap">
                     <Form.Control
@@ -216,7 +354,7 @@ function AllProjects({ projects }) {
                                 <th>Customer</th>
                                 <th>Type</th>
                                 <th>Owner</th>
-                                <th>Due</th>
+                                <th>Age</th>
                                 <th>Tasks</th>
                                 <th>State</th>
                             </tr>
@@ -249,11 +387,11 @@ function AllProjects({ projects }) {
                                     <td className="text-nowrap">
                                         <Owner name={p.owner.name} />
                                     </td>
-                                    <td className="text-nowrap">
-                                        <DueDate
-                                            date={p.dueDate}
-                                            state={p.state}
-                                        />
+                                    <td
+                                        className="text-nowrap"
+                                        title={`Created ${new Date(p.createdAt).toLocaleDateString()}`}
+                                    >
+                                        {formatAge(daysOld(p.createdAt))}
                                     </td>
                                     <td>
                                         <ProgressBar
@@ -283,13 +421,19 @@ function AllProjects({ projects }) {
                     </table>
                 </div>
             ) : (
-                <EmptyState icon={faFolderOpen}>No projects match.</EmptyState>
+                <EmptyState icon={faFolderOpen}>
+                    No applications match.
+                </EmptyState>
             )}
         </section>
     );
 }
 
-AllProjects.propTypes = { projects: PropTypes.array.isRequired };
+AllProjects.propTypes = {
+    projects: PropTypes.array.isRequired,
+    state: PropTypes.string.isRequired,
+    onStateChange: PropTypes.func.isRequired,
+};
 
 // The latest changes across every project, with the full list a click away.
 function RecentActivity() {

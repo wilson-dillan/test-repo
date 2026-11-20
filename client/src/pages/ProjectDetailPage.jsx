@@ -18,6 +18,7 @@ import {
 import { api } from '../api';
 import { useAuth, useLoad } from '../hooks';
 import {
+    formatCreated,
     formatDate,
     formatDateTime,
     formatMoney,
@@ -41,7 +42,7 @@ import { StageControl } from '../components/StageControl';
 import {
     Avatar,
     BackLink,
-    DueDate,
+    CreatedDate,
     EmptyState,
     InactiveBadge,
     LoadError,
@@ -98,11 +99,7 @@ function ProjectDetail({ project, users, type, options, onUpdate, reload }) {
                     </div>
                     <h1>{project.customerName}</h1>
                     <div className="mt-2 d-flex flex-wrap gap-3 align-items-center">
-                        <DueDate
-                            date={project.dueDate}
-                            state={project.state}
-                            prefix="Due "
-                        />
+                        <CreatedDate createdAt={project.createdAt} withAge />
                         {project.housecallUrl && (
                             <a
                                 href={project.housecallUrl}
@@ -225,7 +222,6 @@ function ProjectForm({ project, users, type, options, onSave, onCancel }) {
         customerFirstName: project.customerFirstName,
         customerLastName: project.customerLastName,
         address: project.address,
-        dueDate: project.dueDate || '',
         ownerId: String(project.owner.id),
         financing: project.financing,
         financingProvider: project.financingProvider || '',
@@ -267,9 +263,6 @@ function ProjectForm({ project, users, type, options, onSave, onCancel }) {
                 ...(answersChanged && answerPayload(type, values)),
                 ...('ownerId' in changed && {
                     ownerId: Number(changed.ownerId),
-                }),
-                ...('dueDate' in changed && {
-                    dueDate: changed.dueDate || null,
                 }),
             });
         } catch (err) {
@@ -323,14 +316,6 @@ function ProjectForm({ project, users, type, options, onSave, onCancel }) {
                         onChange={set('address')}
                         maxLength={300}
                         required
-                    />
-                </Form.Group>
-                <Form.Group controlId="dueDate">
-                    <Form.Label>Due Date</Form.Label>
-                    <Form.Control
-                        type="date"
-                        value={values.dueDate}
-                        onChange={set('dueDate')}
                     />
                 </Form.Group>
             </div>
@@ -413,8 +398,8 @@ function ProjectDetailsCard({ project, users, type, options, onSave }) {
                 <ReadField label="Owner">
                     <Owner name={project.owner.name} />
                 </ReadField>
-                <ReadField label="Due date">
-                    <DueDate date={project.dueDate} state={project.state} />
+                <ReadField label="Created">
+                    {formatCreated(project.createdAt)}
                 </ReadField>
                 <ReadField label="Customer">{project.customerName}</ReadField>
                 <ReadField label="Address">{project.address}</ReadField>

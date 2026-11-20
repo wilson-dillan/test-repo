@@ -26,7 +26,6 @@ import { UploadConfirm } from '../components/UploadConfirm';
 import { HistoryTimeline } from '../components/HistoryTimeline';
 import {
     BackLink,
-    DueDate,
     EmptyState,
     InactiveBadge,
     LoadError,
@@ -125,12 +124,6 @@ function TaskDetail({ task, users, onUpdate }) {
                                 </ReadField>
                                 <ReadField label="Address">
                                     {task.address}
-                                </ReadField>
-                                <ReadField label="Due">
-                                    <DueDate
-                                        date={task.dueDate}
-                                        state={task.state}
-                                    />
                                 </ReadField>
                             </div>
                         </TaskForm>

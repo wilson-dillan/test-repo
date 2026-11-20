@@ -117,6 +117,9 @@ function checkContents(file) {
 
 const upload = multer({
     storage: multer.memoryStorage(),
+    // File names are UTF-8 (accents, the special space in Mac screenshot
+    // names); multer otherwise reads them as Latin-1 and garbles them.
+    defParamCharset: 'utf8',
     limits: { fileSize: MAX_FILE_SIZE, files: MAX_FILES },
     fileFilter: (req, file, cb) => {
         if (typeOf(file)) return cb(null, true);
@@ -138,6 +141,9 @@ const SCREENSHOT_TYPES = new Set([
 const MAX_SCREENSHOT_SIZE = 10 * 1024 * 1024;
 const uploadScreenshot = multer({
     storage: multer.memoryStorage(),
+    // File names are UTF-8 (accents, the special space in Mac screenshot
+    // names); multer otherwise reads them as Latin-1 and garbles them.
+    defParamCharset: 'utf8',
     limits: { fileSize: MAX_SCREENSHOT_SIZE, files: 1 },
     fileFilter: (req, file, cb) => {
         if (SCREENSHOT_TYPES.has(typeOf(file)?.mime)) return cb(null, true);

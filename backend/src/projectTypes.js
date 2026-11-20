@@ -31,7 +31,7 @@ const PROJECT_TYPES = {
 };
 
 const FINANCING_PROVIDERS = ['MassSave', 'Synchrony', 'Other'];
-const CONTROLS_TYPES = ['Ecobee', 'Flair', 'Other'];
+const CONTROLS_TYPES = ['Ecobee', 'Flair', 'Mitsubishi', 'Other'];
 
 // Kept in the { name, form } shape the rest of the app uses.
 for (const type of Object.values(PROJECT_TYPES)) {

@@ -7,8 +7,9 @@ import { faArrowLeft, faCalendarDays } from '@fortawesome/free-solid-svg-icons';
 import {
     PROJECT_STATUS_LABELS,
     STATE_LABELS,
-    dueStatus,
-    formatDate,
+    daysOld,
+    formatAge,
+    formatCreated,
     initials,
 } from '../format';
 
@@ -66,22 +67,20 @@ export function Owner({ name }) {
 
 Owner.propTypes = { name: PropTypes.string };
 
-export function DueDate({ date, state, prefix }) {
-    const status = dueStatus(date, state);
+// When an application was created, and how many days old it is.
+export function CreatedDate({ createdAt, withAge }) {
     return (
-        <span className={`due ${status || ''}`}>
+        <span className="created-date">
             <FontAwesomeIcon icon={faCalendarDays} />
-            {date && prefix}
-            {formatDate(date)}
-            {status === 'overdue' && ' · Overdue'}
+            Created {formatCreated(createdAt)}
+            {withAge && ` · ${formatAge(daysOld(createdAt))}`}
         </span>
     );
 }
 
-DueDate.propTypes = {
-    date: PropTypes.string,
-    state: PropTypes.string,
-    prefix: PropTypes.string,
+CreatedDate.propTypes = {
+    createdAt: PropTypes.string.isRequired,
+    withAge: PropTypes.bool,
 };
 
 export function PageLoader() {

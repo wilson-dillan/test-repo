@@ -20,7 +20,7 @@ const PATCHABLE = { ownerId: 'owner_id', notes: 'notes' };
 const taskId = (req) => routeId(req, 'Task');
 
 const TASK_QUERY = `
-    SELECT t.*, u.display_name AS owner_name, p.customer_name, p.due_date, p.address,
+    SELECT t.*, u.display_name AS owner_name, p.customer_name, p.address,
            p.active AS project_active, p.state AS project_state,
            (SELECT count(*) FROM attachments a WHERE a.task_id = t.id) AS attachment_count
     FROM tasks t
@@ -54,7 +54,7 @@ router.get('/', async (req, res) => {
     const { rows } = await db.query(
         `${TASK_QUERY}
          WHERE t.active AND ($1::integer IS NULL OR t.owner_id = $1)
-         ORDER BY t.state = 'done', NOT p.active, p.due_date NULLS LAST, t.project_id, t.letter`,
+         ORDER BY t.state = 'done', NOT p.active, t.project_id, t.letter`,
         [ownerId],
     );
     res.send(rows.map(toTask));

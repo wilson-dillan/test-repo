@@ -187,8 +187,13 @@ h1,
             color: #fff;
         }
 
-        &.active {
+        // The current page stays white even under the mouse (the hover
+        // background above used to hide the navy text).
+        &.active,
+        &.active:hover {
+            border-style: solid;
             border-color: #fff;
+            background: #fff;
             color: $ws-navy;
         }
     }
@@ -445,22 +450,12 @@ h1,
     color: $ws-muted;
 }
 
-.due {
+.created-date {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
     font-size: 0.85rem;
     color: $ws-muted;
-
-    &.overdue {
-        color: $ws-red;
-        font-weight: 600;
-    }
-
-    &.soon {
-        color: $ws-amber;
-        font-weight: 600;
-    }
 }
 
 .avatar {
@@ -2000,9 +1995,10 @@ h1,
             }
         }
 
+        // Names and addresses wrap so the whole thing is always readable.
         .top {
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             justify-content: space-between;
             gap: 0.4rem;
         }
@@ -2010,12 +2006,11 @@ h1,
         .name {
             font-weight: 700;
             font-size: 0.875rem;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+            overflow-wrap: anywhere;
         }
 
         .state-pill {
+            flex-shrink: 0;
             font-size: 0.65rem;
             padding: 0.1rem 0.45rem;
         }
@@ -2023,9 +2018,7 @@ h1,
         .addr {
             font-size: 0.78rem;
             color: $ws-muted;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+            overflow-wrap: anywhere;
         }
 
         .empty {
@@ -2466,4 +2459,158 @@ h1,
 .panel-title .locked-note {
     font-size: 0.8rem;
     color: $ws-muted;
+}
+
+// Dashboard: one person's open tasks, opened from the per-user charts.
+.user-task-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-height: 22rem;
+    overflow-y: auto;
+}
+
+// Clicking a chart shouldn't leave a focus box drawn around it.
+.recharts-wrapper :focus,
+.recharts-wrapper:focus {
+    outline: none;
+}
+
+// "Highest Priority": ranked open applications with one block per document.
+.priority-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+
+    li + li {
+        border-top: 1px solid $ws-line;
+    }
+
+    button {
+        display: grid;
+        grid-template-columns: 1.75rem minmax(0, 1fr) auto 2.5rem;
+        align-items: center;
+        gap: 0.75rem;
+        width: 100%;
+        padding: 0.55rem 0.4rem;
+        border: 0;
+        border-radius: 0.4rem;
+        background: none;
+        text-align: left;
+        color: $ws-ink;
+
+        &:hover {
+            background: $ws-sky-light;
+        }
+    }
+
+    .rank {
+        font-weight: 700;
+        color: $ws-muted;
+        text-align: center;
+    }
+
+    .who {
+        min-width: 0;
+    }
+
+    .name {
+        display: block;
+        font-weight: 600;
+        overflow-wrap: anywhere;
+    }
+
+    .meta {
+        display: block;
+        font-size: 0.78rem;
+        color: $ws-muted;
+    }
+
+    .docs {
+        display: flex;
+        gap: 2px;
+
+        span {
+            width: 1.6rem;
+            height: 0.85rem;
+            border-radius: 4px;
+        }
+    }
+
+    .count {
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+        text-align: right;
+    }
+}
+
+// Status pie legend: each entry also filters the table.
+.status-legend {
+    justify-content: center;
+
+    button {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        border: 0;
+        background: none;
+        padding: 0.15rem 0.35rem;
+        border-radius: 0.3rem;
+        color: inherit;
+        font: inherit;
+
+        &:hover {
+            background: $ws-sky-light;
+        }
+    }
+}
+
+// Dashboard: the clicked person's work, highlighted under the chart.
+.user-work {
+    margin-top: 1rem;
+    padding: 1.1rem 1.25rem;
+    border: 2px solid $ws-navy;
+    border-radius: $border-radius;
+    background: $ws-sky-light;
+    animation: user-work-in 1.2s ease-out;
+
+    h3 {
+        font-size: 1.1rem;
+        margin: 0;
+    }
+
+    h4 {
+        font-size: 0.95rem;
+        font-weight: 700;
+        margin-bottom: 0.6rem;
+
+        .count {
+            font-weight: 600;
+            font-size: 0.8rem;
+            color: $ws-muted;
+            background: $ws-surface;
+            border-radius: 999px;
+            padding: 0.1rem 0.55rem;
+            margin-left: 0.4rem;
+        }
+    }
+}
+
+.user-work-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+@keyframes user-work-in {
+    0% {
+        box-shadow: 0 0 0 0 rgba(5, 67, 143, 0.45);
+    }
+    40% {
+        box-shadow: 0 0 0 10px rgba(5, 67, 143, 0.15);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(5, 67, 143, 0);
+    }
 }

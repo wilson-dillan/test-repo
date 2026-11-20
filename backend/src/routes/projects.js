@@ -30,7 +30,6 @@ const PATCHABLE = {
     customerFirstName: 'customer_first_name',
     customerLastName: 'customer_last_name',
     address: 'address',
-    dueDate: 'due_date',
     ownerId: 'owner_id',
     active: 'active',
     financing: 'financing',
@@ -131,7 +130,7 @@ router.get('/', async (req, res) => {
          LEFT JOIN tasks t ON t.project_id = p.id
          WHERE ($1::integer IS NULL OR p.owner_id = $1)
          GROUP BY p.id, u.display_name
-         ORDER BY NOT p.active, p.state = 'done', p.due_date NULLS LAST, p.id DESC`,
+         ORDER BY NOT p.active, p.state = 'done', p.created_at, p.id`,
         [ownerId],
     );
     res.send(rows.map(toProject));
@@ -166,7 +165,6 @@ router.post('/', async (req, res) => {
                 body.customerLastName,
             ),
             address: await fields.address(body.address),
-            due_date: await fields.due_date(body.dueDate),
             owner_id: await fields.owner_id(body.ownerId, client),
         };
         const answers = { financing: null };
@@ -186,16 +184,15 @@ router.post('/', async (req, res) => {
         normalizeProjectAnswers(body.type, answers);
 
         const { rows } = await client.query(
-            `INSERT INTO projects (type, customer_first_name, customer_last_name, address, due_date, owner_id, created_by, housecall_customer_id,
+            `INSERT INTO projects (type, customer_first_name, customer_last_name, address, owner_id, created_by, housecall_customer_id,
                                    financing, financing_provider, financing_other, heats_with_gas, integrated_controls, controls_type, controls_other)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
              RETURNING id, customer_name`,
             [
                 body.type,
                 values.customer_first_name,
                 values.customer_last_name,
                 values.address,
-                values.due_date,
                 values.owner_id,
                 req.user.id,
                 housecallCustomerId,

@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const db = require('./db');
 
@@ -195,25 +196,75 @@ async function sendTestEmail(to, requestedBy) {
     }
 }
 
+const TIME_ZONE = () => process.env.APP_TIMEZONE || 'America/New_York';
+
+// "8:42 PM" or "Nov 19, 8:42 PM" in the team's time zone.
+function formatTime(date, withDay = false) {
+    return date.toLocaleString('en-US', {
+        timeZone: TIME_ZONE(),
+        ...(withDay && { month: 'short', day: 'numeric' }),
+        hour: 'numeric',
+        minute: '2-digit',
+    });
+}
+
+// A simple branded email: heading, paragraphs, one big button with the
+// link spelled out underneath for mail apps that block buttons.
+function emailLayout({ heading, paragraphs, button, footer }) {
+    const p = (text) =>
+        `<p style="margin:0 0 14px;font-size:15px;line-height:1.5;color:#17233a">${text}</p>`;
+    return `<div style="background:#f1f4f9;padding:24px 12px;font-family:Arial,Helvetica,sans-serif">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:10px;overflow:hidden">
+<tr><td style="background:#05438f;padding:16px 24px;color:#ffffff;font-size:16px;font-weight:bold">Wilson Services · Mass Save Application Tracker</td></tr>
+<tr><td style="padding:24px">
+<h1 style="margin:0 0 16px;font-size:20px;color:#17233a">${heading}</h1>
+${paragraphs.map(p).join('\n')}
+<p style="margin:22px 0"><a href="${escapeHtml(button.url)}" style="display:inline-block;padding:12px 22px;background:#05438f;color:#ffffff;border-radius:6px;text-decoration:none;font-weight:bold;font-size:15px">${escapeHtml(button.label)}</a></p>
+<p style="margin:0 0 14px;font-size:13px;color:#5c6b80">Button not working? Copy this link into your browser:<br><a href="${escapeHtml(button.url)}" style="color:#05438f;word-break:break-all">${escapeHtml(button.url)}</a></p>
+<p style="margin:18px 0 0;padding-top:14px;border-top:1px solid #e1e7ef;font-size:13px;line-height:1.5;color:#5c6b80">${footer}</p>
+</td></tr></table></div>`;
+}
+
+// The short team tutorial, linked only from the invite email. It's part
+// of the app (client/public/tutorial), so it lives wherever the app does.
+const TUTORIAL_URL = () => `${config().appUrl}/tutorial/`;
+
 // Sends an invite or reset link. Throws an explained error so the caller
 // can show it.
+// Each email names the time it was sent and when its link expires, so a
+// second email is never word-for-word the same as the first. (Gmail hides
+// repeated text in a conversation behind "•••", which hid the button.)
 async function sendPasswordLink(user, { token, purpose, hours }, sentBy) {
     const url = `${config().appUrl}/set-password?token=${token}`;
     const invite = purpose === 'invite';
+    const now = new Date();
+    const expires = new Date(now.getTime() + hours * 3600 * 1000);
     const expiry = hours === 1 ? '1 hour' : `${hours} hours`;
+    const sentAt = formatTime(now, true);
+    // A short code unique to this email (not the secret link itself), so
+    // two emails sent in the same minute still differ.
+    const ref = crypto
+        .createHash('sha256')
+        .update(token)
+        .digest('hex')
+        .slice(0, 6)
+        .toUpperCase();
+    const expiresAt = formatTime(expires, hours > 12);
     const intro = invite
-        ? `${sentBy ? `${sentBy.displayName} added` : "You've been added"} you to the Wilson Services project tracker.`
-        : `We received a request to reset your password for the Wilson Services project tracker.`;
+        ? `${sentBy ? `${sentBy.displayName} added` : "You've been added"} you to the Wilson Services Mass Save Application Tracker.`
+        : 'We received a request to reset your password for the Wilson Services Mass Save Application Tracker.';
     const action = invite ? 'Create my password' : 'Choose a new password';
     const ignore = invite
         ? ''
-        : "If you didn't ask for this, you can ignore this email; your password won't change.";
+        : "If you didn't ask for this, you can ignore this email. Your password won't change.";
+    const usedNote =
+        'This link works once and replaces any earlier link we sent you.';
     try {
         await send({
             to: user.email,
             subject: invite
-                ? "You're invited to the Wilson Services tracker"
-                : 'Reset your Wilson Services tracker password',
+                ? `You're invited to the Wilson Services tracker (sent ${sentAt} · ref ${ref})`
+                : `Reset your Wilson Services password (requested ${sentAt} · ref ${ref})`,
             text: [
                 `Hi ${user.display_name},`,
                 '',
@@ -222,14 +273,32 @@ async function sendPasswordLink(user, { token, purpose, hours }, sentBy) {
                 '',
                 `${action}: ${url}`,
                 '',
-                `This link works once and expires in ${expiry}.`,
+                ...(invite
+                    ? [
+                          `New to the tracker? Follow the step-by-step tutorial: ${TUTORIAL_URL()}`,
+                          '',
+                      ]
+                    : []),
+                `This link expires at ${expiresAt} (${expiry} after it was sent at ${sentAt}). ${usedNote} Reference: ${ref}.`,
                 ignore,
             ].join('\n'),
-            html: `<p>Hi ${escapeHtml(user.display_name)},</p>
-<p>${escapeHtml(intro)}</p>
-<p>Your username is: <strong>${escapeHtml(user.username)}</strong></p>
-<p><a href="${escapeHtml(url)}" style="display:inline-block;padding:10px 18px;background:#05438f;color:#fff;border-radius:6px;text-decoration:none;font-weight:600">${action}</a></p>
-<p style="color:#5c6b80">This link works once and expires in ${expiry}. ${escapeHtml(ignore)}</p>`,
+            html: emailLayout({
+                heading: invite
+                    ? 'Welcome to the team tracker'
+                    : 'Reset your password',
+                paragraphs: [
+                    `Hi ${escapeHtml(user.display_name)},`,
+                    escapeHtml(intro),
+                    `Your username is <strong>${escapeHtml(user.username)}</strong>.`,
+                    ...(invite
+                        ? [
+                              `New to the tracker? <a href="${escapeHtml(TUTORIAL_URL())}" style="color:#05438f;font-weight:bold">Follow the step-by-step tutorial</a>.`,
+                          ]
+                        : []),
+                ],
+                button: { label: action, url },
+                footer: `Sent ${escapeHtml(sentAt)} · reference ${ref}. This link expires at <strong>${escapeHtml(expiresAt)}</strong> (${expiry}). ${escapeHtml(usedNote)}${ignore ? `<br>${escapeHtml(ignore)}` : ''}`,
+            }),
         });
         console.log(
             `[email] ${invite ? 'Invite' : 'Reset link'} sent to ${user.email}.`,
@@ -269,7 +338,7 @@ async function notifyResetRequested(user, { linkSent, error }) {
               ? `${user.display_name} has no email address, so no link was sent. You can set a password for them on the Users page.`
               : `The reset link could not be sent: ${error}`;
         const when = new Date().toLocaleString('en-US', {
-            timeZone: process.env.APP_TIMEZONE || 'UTC',
+            timeZone: TIME_ZONE(),
             dateStyle: 'medium',
             timeStyle: 'short',
         });

@@ -17,7 +17,6 @@ import {
 import { useToast } from '../toastContext';
 import { api } from '../api';
 import { useAuth, useLoad } from '../hooks';
-import { formatDate } from '../format';
 import { LoadError, PageLoader } from '../components/ui';
 import { HousecallSearch } from '../components/HousecallSearch';
 import { ProjectQuestions } from '../components/ProjectQuestions';
@@ -55,11 +54,6 @@ const STEPS = [
         question: 'A few questions',
         helper: 'These decide which documents are needed. You can change them later.',
         required: true,
-    },
-    {
-        key: 'dueDate',
-        question: 'When is it due?',
-        helper: 'Optional. Leave blank if there is no due date yet.',
     },
     {
         key: 'ownerId',
@@ -106,7 +100,6 @@ function Wizard({ types, users, housecall, options }) {
         customerFirstName: '',
         customerLastName: '',
         address: '',
-        dueDate: '',
         ownerId: String(user.id),
         note: '',
         housecallCustomerId: null,
@@ -166,7 +159,6 @@ function Wizard({ types, users, housecall, options }) {
                 ...values,
                 ...answerPayload(type, values),
                 ownerId: Number(values.ownerId),
-                dueDate: values.dueDate || null,
             });
             notifyChange();
             showToast('Successfully created');
@@ -430,10 +422,6 @@ function StepInput({ step, value, onChange, onPick, types, users }) {
                     ))}
                 </div>
             );
-        case 'dueDate':
-            return (
-                <Form.Control type="date" {...common} aria-label="Due date" />
-            );
         case 'ownerId':
             return (
                 <Form.Select {...common} aria-label="Owner">
@@ -476,11 +464,6 @@ function Review({ values, type, owner, onEdit }) {
             `${values.customerFirstName} ${values.customerLastName}`.trim(),
         ],
         ['customer', 'Address', values.address],
-        [
-            'dueDate',
-            'Due date',
-            values.dueDate ? formatDate(values.dueDate) : '—',
-        ],
         ...(asks(type, 'heats_with_gas')
             ? [
                   [

@@ -2,7 +2,7 @@ import PropTypes from 'prop-types';
 import { Link } from 'react-router-dom';
 import ProgressBar from 'react-bootstrap/ProgressBar';
 import {
-    DueDate,
+    CreatedDate,
     InactiveBadge,
     Owner,
     ProjectStatusPill,
@@ -32,7 +32,7 @@ export function ProjectCard({ project }) {
                 </div>
             </div>
             <div className="type-badge">{project.typeLabel}</div>
-            <DueDate date={project.dueDate} state={project.state} />
+            <CreatedDate createdAt={project.createdAt} />
             <div className="mt-auto">
                 <ProgressBar now={percent} aria-label="Tasks done" />
                 <div className="progress-label mt-1">
@@ -44,6 +44,25 @@ export function ProjectCard({ project }) {
 }
 
 ProjectCard.propTypes = { project: PropTypes.object.isRequired };
+
+// A compact one-line application, styled like TaskItem.
+export function ProjectItem({ project }) {
+    return (
+        <Link to={`/projects/${project.id}`} className="task-item project-item">
+            <span className="id-badge light">#{project.id}</span>
+            <div className="body">
+                <div className="name">{project.customerName}</div>
+                <div className="meta">
+                    {project.typeLabel} · {project.taskDone} of{' '}
+                    {project.taskTotal} documents
+                </div>
+            </div>
+            <ProjectStatusPill status={project.status} />
+        </Link>
+    );
+}
+
+ProjectItem.propTypes = { project: PropTypes.object.isRequired };
 
 export function TaskItem({ task, showOwner }) {
     return (

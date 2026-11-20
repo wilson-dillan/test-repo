@@ -6,8 +6,6 @@ const {
     CONTROLS_TYPES,
 } = require('./projectTypes');
 
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-
 function text(label, maxLength, { required = true } = {}) {
     return async (value) => {
         const result = String(value ?? '').trim();
@@ -20,14 +18,6 @@ function text(label, maxLength, { required = true } = {}) {
             );
         return result;
     };
-}
-
-async function date(value) {
-    if (value === null || value === '' || value === undefined) return null;
-    const result = String(value);
-    if (!DATE_PATTERN.test(result) || isNaN(Date.parse(result)))
-        throw new HttpError(400, 'Enter a valid due date.');
-    return result;
 }
 
 async function owner(value, client) {
@@ -88,7 +78,6 @@ const EDITABLE_FIELDS = {
         customer_first_name: text('First name', 100),
         customer_last_name: text('Last name', 100, { required: false }),
         address: text('Address', 300),
-        due_date: date,
         owner_id: owner,
         state: projectState,
         active,
@@ -180,7 +169,7 @@ async function assertProjectEditable(client, projectId) {
 }
 
 // Once submitted (or Done), an application's details are fixed: its
-// customer details, answers, due date, and who owns each task. Moving
+// customer details, answers, and who owns each task. Moving
 // through the stages and uploading documents is still allowed.
 const STAGE_FIELDS = new Set(['state']);
 async function assertDetailsEditable(client, kind, row, fields) {

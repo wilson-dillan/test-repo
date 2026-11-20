@@ -9,7 +9,6 @@ function toProject(row) {
         customerFirstName: row.customer_first_name,
         customerLastName: row.customer_last_name,
         address: row.address,
-        dueDate: row.due_date,
         owner: { id: row.owner_id, name: row.owner_name },
         state: row.state,
         active: row.active,
@@ -61,7 +60,6 @@ function toTask(row) {
         completedAt: row.completed_at,
         ...(row.customer_name !== undefined && {
             customerName: row.customer_name,
-            dueDate: row.due_date,
             projectActive: row.project_active,
             projectState: row.project_state,
         }),

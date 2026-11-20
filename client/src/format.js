@@ -12,7 +12,7 @@ const dateTimeFormat = new Intl.DateTimeFormat(undefined, {
 });
 const relative = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
 
-// Due dates arrive as 'YYYY-MM-DD'; parse them as local dates so they
+// Plain dates arrive as 'YYYY-MM-DD'; parse them as local dates so they
 // don't shift a day in western time zones.
 export function parseDate(value) {
     if (!value) return null;
@@ -22,7 +22,7 @@ export function parseDate(value) {
 
 export function formatDate(value) {
     const date = parseDate(value);
-    return date ? dateFormat.format(date) : 'No due date';
+    return date ? dateFormat.format(date) : '—';
 }
 
 export function formatDateTime(value) {
@@ -46,16 +46,22 @@ export function timeAgo(value) {
     return 'just now';
 }
 
-// 'overdue' | 'soon' (within 3 days) | null
-export function dueStatus(dueDate, state) {
-    const date = parseDate(dueDate);
-    if (!date || state === 'done') return null;
+// Whole days since `createdAt` (0 on the day it was created), counted in
+// calendar days on this computer.
+export function daysOld(createdAt) {
+    const created = new Date(createdAt);
+    created.setHours(0, 0, 0, 0);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const days = (date - today) / 86400000;
-    if (days < 0) return 'overdue';
-    if (days <= 3) return 'soon';
-    return null;
+    return Math.max(0, Math.round((today - created) / 86400000));
+}
+
+export function formatAge(days) {
+    return days === 0 ? 'New today' : `${days} day${days === 1 ? '' : 's'} old`;
+}
+
+export function formatCreated(createdAt) {
+    return dateFormat.format(new Date(createdAt));
 }
 
 export function initials(name = '') {
@@ -187,4 +193,44 @@ export function ownerChoices(users, owner) {
 
 export function formLabel(name) {
     return /\b(form|document|bill)$/i.test(name) ? name : `${name} form`;
+}
+
+// Open applications still collecting documents, most urgent first: the
+// oldest and the most incomplete come first, weighed together. Each
+// application gets a place in two orders and the smallest total wins:
+// - most incomplete: smallest share of documents uploaded; among equals,
+//   more documents outstanding (4 missing beats 1);
+// - oldest: most days since it was created.
+// Ties go to the most incomplete, then the oldest.
+export function rankByPriority(projects) {
+    const byIncomplete = (a, b) => a.share - b.share || b.missing - a.missing;
+    const byAge = (a, b) => b.age - a.age;
+    const open = projects
+        .filter((p) => p.active && p.state === 'todo' && p.taskTotal > 0)
+        .map((p) => ({
+            ...p,
+            share: p.taskDone / p.taskTotal,
+            missing: p.taskTotal - p.taskDone,
+            age: daysOld(p.createdAt),
+        }));
+    // Equal values share a place, so a tie in one order counts for neither.
+    const places = (compare) => {
+        const order = [...open].sort(compare);
+        const place = new Map();
+        order.forEach((p, i) =>
+            place.set(
+                p.id,
+                i > 0 && compare(order[i - 1], p) === 0
+                    ? place.get(order[i - 1].id)
+                    : i,
+            ),
+        );
+        return place;
+    };
+    const incomplete = places(byIncomplete);
+    const oldest = places(byAge);
+    const total = (p) => incomplete.get(p.id) + oldest.get(p.id);
+    return open.sort(
+        (a, b) => total(a) - total(b) || byIncomplete(a, b) || byAge(a, b),
+    );
 }
